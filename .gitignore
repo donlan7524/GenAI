@@ -1,0 +1,42 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# === 資料庫（含真實使用者資料，不應上傳）===
+*.db
+*.sqlite
+*.sqlite3
+
+# === 設定檔（含 Cookie 等敏感資訊）===
+config.json
+
+# === 環境變數 ===
+.env
+.env.*
+
+# === Streamlit ===
+.streamlit/secrets.toml
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === macOS ===
+.DS_Store
+
+# === Windows ===
+Thumbs.db
+desktop.ini
+
+# === 暫存檔 ===
+*.log
+scratch_*.py
