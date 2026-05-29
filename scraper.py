@@ -35,6 +35,24 @@ def save_config(config):
     except Exception:
         return False
 
+def parse_dcard_date(created_at_str):
+    """
+    將 Dcard API 回傳的 ISO 時間字串解析並轉換為台灣時間 (UTC+8) 的 YYYY-MM-DD HH:MM:SS。
+    """
+    if not created_at_str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        # 移除 T 和 Z，並去除毫秒部分 (如果有)
+        clean_str = str(created_at_str).replace("T", " ").replace("Z", "")
+        if "." in clean_str:
+            clean_str = clean_str.split(".")[0]
+        dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+        # 轉換成台灣時間 (UTC+8)
+        dt_tw = dt + pd.Timedelta(hours=8)
+        return dt_tw.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 def classify_category(title, content, topics):
     """
     依據貼文標題、內容與 Dcard 標籤，分類至四大主題 (課業、感情、校務、生活)。
@@ -104,22 +122,15 @@ def run_scraper(db_path=db_manager.DB_FILE):
                 except Exception:
                     pass # 若獲取內文細節失敗，以 excerpt 替代
                 
-                # 解析時間 (Dcard 回傳 ISO 8601 格式，如 '2026-05-28T13:30:00.000Z')
+                # 解析時間 (Dcard 回傳 ISO 8601 格式)
                 created_at_str = p.get("createdAt", "")
-                try:
-                    # 轉換為標準格式寫入
-                    dt = datetime.strptime(created_at_str.replace("T", " ").replace(".000Z", ""), "%Y-%m-%d %H:%M:%S")
-                    # 轉換成台灣時間 (UTC+8)
-                    dt_tw = dt + pd.Timedelta(hours=8)
-                    created_at_val = dt_tw.strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    created_at_val = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                created_at_val = parse_dcard_date(created_at_str)
                 
                 # 分類
                 category = classify_category(title, content, topics)
                 
-                # NLP 計算情緒分數與關鍵字
-                joy, anxiety, anger = nlp_engine.analyze_sentiment(title, content)
+                # NLP 計算情緒分數與關鍵字 (Valence-Arousal 版)
+                valence, arousal = nlp_engine.analyze_sentiment(title, content)
                 keywords = nlp_engine.extract_keywords(title, content, limit=5)
                 
                 scraped_posts.append({
@@ -128,9 +139,8 @@ def run_scraper(db_path=db_manager.DB_FILE):
                     "content": content,
                     "category": category,
                     "created_at": created_at_val,
-                    "joy_score": joy,
-                    "anxiety_score": anxiety,
-                    "anger_score": anger,
+                    "valence_score": valence,
+                    "arousal_score": arousal,
                     "like_count": p.get("likeCount", 0),
                     "comment_count": p.get("commentCount", 0),
                     "keywords": keywords
@@ -176,8 +186,8 @@ def run_scraper(db_path=db_manager.DB_FILE):
         for _ in range(num_posts):
             title, content, category = random.choice(mock_titles_contents)
             
-            # 計算情緒分數 (採用 nlp_engine 的標準歸一化分數)
-            joy, anxiety, anger = nlp_engine.analyze_sentiment(title, content)
+            # 計算情緒分數 (採用 nlp_engine 的標準 Valence-Arousal 分數)
+            valence, arousal = nlp_engine.analyze_sentiment(title, content)
             
             likes = random.randint(5, 150)
             if is_midterm and category == "校務":
@@ -196,9 +206,8 @@ def run_scraper(db_path=db_manager.DB_FILE):
                 "content": content,
                 "category": category,
                 "created_at": post_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "joy_score": round(joy, 1),
-                "anxiety_score": round(anxiety, 1),
-                "anger_score": round(anger, 1),
+                "valence_score": valence,
+                "arousal_score": arousal,
                 "like_count": likes,
                 "comment_count": comments,
                 "keywords": keywords
@@ -246,15 +255,10 @@ def import_raw_json(json_str, db_path=db_manager.DB_FILE):
             content = p.get("content", excerpt) or excerpt
             
             created_at_str = p.get("createdAt", "")
-            try:
-                dt = datetime.strptime(created_at_str.replace("T", " ").replace(".000Z", ""), "%Y-%m-%d %H:%M:%S")
-                dt_tw = dt + pd.Timedelta(hours=8)
-                created_at_val = dt_tw.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                created_at_val = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            created_at_val = parse_dcard_date(created_at_str)
                 
             category = classify_category(title, content, topics)
-            joy, anxiety, anger = nlp_engine.analyze_sentiment(title, content)
+            valence, arousal = nlp_engine.analyze_sentiment(title, content)
             keywords = nlp_engine.extract_keywords(title, content, limit=5)
             
             scraped_posts.append({
@@ -263,9 +267,8 @@ def import_raw_json(json_str, db_path=db_manager.DB_FILE):
                 "content": content,
                 "category": category,
                 "created_at": created_at_val,
-                "joy_score": joy,
-                "anxiety_score": anxiety,
-                "anger_score": anger,
+                "valence_score": valence,
+                "arousal_score": arousal,
                 "like_count": p.get("likeCount", 0),
                 "comment_count": p.get("commentCount", 0),
                 "keywords": keywords
@@ -312,26 +315,17 @@ def import_comments_json(json_str, db_path=db_manager.DB_FILE):
             floor = c.get("floor", i + 1)
             # 以 post_id + floor 作為唯一 ID
             comment_id = f"{post_id}_{floor}"
-            joy, anxiety, anger = nlp_engine.analyze_sentiment(post_title, content)
+            valence, arousal = nlp_engine.analyze_sentiment(post_title, content)
             created_at_str = c.get("createdAt", "")
-            try:
-                dt = datetime.strptime(
-                    created_at_str.replace("T", " ").replace(".000Z", ""),
-                    "%Y-%m-%d %H:%M:%S"
-                )
-                dt_tw = dt + pd.Timedelta(hours=8)
-                created_at_val = dt_tw.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                created_at_val = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            created_at_val = parse_dcard_date(created_at_str)
 
             processed.append({
                 "comment_id": comment_id,
                 "post_id": post_id,
                 "content": content,
                 "floor": floor,
-                "joy_score": joy,
-                "anxiety_score": anxiety,
-                "anger_score": anger,
+                "valence_score": valence,
+                "arousal_score": arousal,
                 "created_at": created_at_val
             })
 

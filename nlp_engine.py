@@ -56,86 +56,104 @@ def extract_keywords(title, content, limit=5):
 
 
 # ==============================================================================
-# 2. 情緒分析模型 (Sentiment Analysis Module)
+# 2. 情緒分析模型 (Sentiment Analysis Module - Valence-Arousal)
 # ==============================================================================
-# 情緒關鍵詞詞典 (輕量規則引擎，提供 100% 離線可用且穩定的情緒數值)
-JOY_LEXICON = ["開心", "高興", "爽", "好棒", "告白成功", "超甜", "推薦", "感謝", "讚", "音樂會", "夕陽", "笑", "樂趣", "喜悅", "正面", "順利", "成功", "舒服"]
-ANXIETY_LEXICON = ["焦慮", "擔心", "爆肝", "崩潰", "壓力", "期中考", "期末考", "考古題", "微積分", "延畢", "二一", "失眠", "遲到", "緊張", "怕", "憂鬱", "無助", "轉圈圈", "排隊"]
-ANGER_LEXICON = ["生氣", "怒", "幹", "超爛", "停水", "當機", "不爽", "搶走", "漲價", "垃圾", "效率極慢", "態度很差", "氣死", "抱怨", "不滿", "態度差", "靠北", "傻眼"]
+# 定義詞彙的情緒向量值 (Valence, Arousal)
+# Valence 範圍在 [-100, 100]：正值代表愉快/正面，負值代表不愉快/負面
+# Arousal 範圍在 [-100, 100]：正值代表激動/興奮/焦慮，負值代表冷靜/放鬆/沮喪
+EMOTION_VECTORS = {
+    # 正向高興 / 興奮類 (Valence > 0, Arousal > 0)
+    "開心": (75.0, 45.0), "高興": (70.0, 40.0), "爽": (85.0, 65.0), "好棒": (70.0, 50.0),
+    "告白成功": (90.0, 80.0), "超甜": (80.0, 50.0), "音樂會": (60.0, 45.0), "喜悅": (75.0, 40.0),
+    "笑": (60.0, 30.0), "樂趣": (65.0, 30.0), "正面": (50.0, 10.0), "順利": (60.0, 20.0),
+    "成功": (75.0, 40.0),
+    
+    # 正向放鬆 / 平靜類 (Valence > 0, Arousal < 0)
+    "舒服": (70.0, -45.0), "平靜": (60.0, -60.0), "冷靜": (50.0, -50.0), "放鬆": (70.0, -55.0),
+    "愜意": (75.0, -50.0), "溫和": (50.0, -40.0), "沒事": (30.0, -30.0), "推薦": (40.0, 10.0),
+    "感謝": (70.0, 15.0), "讚": (60.0, 10.0), "夕陽": (65.0, -30.0),
+    
+    # 負向焦慮 / 緊張類 (Valence < 0, Arousal > 0)
+    "焦慮": (-60.0, 65.0), "擔心": (-50.0, 45.0), "爆肝": (-70.0, 80.0), "崩潰": (-80.0, 85.0),
+    "壓力": (-65.0, 70.0), "期中考": (-30.0, 50.0), "期末考": (-35.0, 55.0), "考古題": (-10.0, 30.0),
+    "微積分": (-25.0, 40.0), "延畢": (-80.0, 75.0), "二一": (-85.0, 80.0), "失眠": (-60.0, 60.0),
+    "遲到": (-50.0, 65.0), "緊張": (-45.0, 70.0), "怕": (-55.0, 60.0), "憂鬱": (-70.0, 30.0),
+    "無助": (-65.0, 40.0), "轉圈圈": (-30.0, 45.0), "排隊": (-30.0, 40.0),
+    
+    # 負向憤怒 / 躁動類 (Valence < 0, Arousal > 0)
+    "生氣": (-85.0, 80.0), "怒": (-90.0, 85.0), "幹": (-95.0, 95.0), "超爛": (-85.0, 75.0),
+    "停水": (-80.0, 70.0), "當機": (-75.0, 75.0), "不爽": (-80.0, 75.0), "搶走": (-65.0, 60.0),
+    "漲價": (-50.0, 50.0), "垃圾": (-85.0, 80.0), "效率極慢": (-70.0, 60.0), "態度很差": (-80.0, 70.0),
+    "氣死": (-90.0, 85.0), "抱怨": (-60.0, 50.0), "不滿": (-65.0, 55.0), "態度差": (-75.0, 65.0),
+    "靠北": (-80.0, 80.0), "傻眼": (-60.0, 60.0),
+    
+    # 負向消極 / 沮喪類 (Valence < 0, Arousal < 0)
+    "無奈": (-45.0, -30.0), "沮喪": (-70.0, -25.0), "難過": (-65.0, -20.0), "心碎": (-80.0, -10.0),
+    "累": (-40.0, -50.0), "疲憊": (-50.0, -45.0), "無聊": (-25.0, -40.0), "孤單": (-50.0, -25.0)
+}
 
 def analyze_sentiment(title, content):
     """
-    分析貼文情緒，回傳 (joy_score, anxiety_score, anger_score)。
-    若環境變數中設定了 GEMINI_API_KEY，可調用外部 LLM API，
-    否則自動降級 (Fallback) 到專家系統情緒詞典運算，保證離線狀態下高穩定運作。
+    分析貼文與標題，估算 Valence 與 Arousal 情緒分數，並回傳 (valence_score, arousal_score)。
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    
-    # 若有 API Key 則可規劃呼叫 LLM (此處預留，並提供字典 Fallback 作為生產環境之防呆)
-    if api_key:
-        try:
-            # 這裡可以透過 requests 呼叫 Gemini REST API
-            # 為了 PoC 的穩定性，我們在此處實現高精度的字典專家算法，
-            # 因為網路調用可能因為 API Key 過期或限制頻率而崩潰。
-            pass
-        except Exception:
-            pass # 失敗時降級到字典算法
-            
-    # ----------------------------------------------------
-    # 專家系統情緒詞典演算法
-    # ----------------------------------------------------
     text = f"{title} {content}"
     
-    # 1. 基礎計數
-    joy_cnt = sum(1 for w in JOY_LEXICON if w in text)
-    anxiety_cnt = sum(1 for w in ANXIETY_LEXICON if w in text)
-    anger_cnt = sum(1 for w in ANGER_LEXICON if w in text)
+    sum_val = 0.0
+    sum_aro = 0.0
+    weight_total = 0.0
     
-    # 2. 特定中山校園高強度事件權重加分
-    # 例如：停水 / 當機 -> 憤怒與焦慮加權
-    special_anger = 0.0
-    special_anxiety = 0.0
-    special_joy = 0.0
+    # 1. 詞典比對與加權計分
+    for word, (val, aro) in EMOTION_VECTORS.items():
+        if word in text:
+            cnt = text.count(word)
+            # 以字數與詞頻做加權權重
+            weight = cnt * (len(word) ** 0.5)
+            sum_val += val * weight
+            sum_aro += aro * weight
+            weight_total += weight
+            
+    # 2. 中性預設值
+    if weight_total > 0:
+        valence = sum_val / weight_total
+        arousal = sum_aro / weight_total
+    else:
+        # 當無任何情緒詞命中，給予微幅正面與平靜預設值
+        valence = 5.0
+        arousal = 0.0
+        
+    # 3. 校園特定重大事件向量偏置 (Bias)
+    bias_val = 0.0
+    bias_aro = 0.0
     
     if "停水" in text:
-        special_anger += 40.0
-        special_anxiety += 20.0
-    if "選課" in text and ("當機" in text or "轉圈圈" in text or "延畢" in text):
-        special_anger += 45.0
-        special_anxiety += 35.0
-    if "期中" in text or "期末" in text or "爆肝" in text or "微積分" in text:
-        special_anxiety += 40.0
-    if "告白" in text or "夕陽" in text or "成功" in text:
-        special_joy += 50.0
-    if "獼猴" in text or "猴子" in text or "搶" in text:
-        special_anger += 20.0
-        special_anxiety += 15.0
-        
-    # 3. 基礎分數組合
-    joy_score = 15.0 + (joy_cnt * 10.0) + special_joy
-    anxiety_score = 15.0 + (anxiety_cnt * 10.0) + special_anxiety
-    anger_score = 5.0 + (anger_cnt * 12.0) + special_anger
+        bias_val -= 35.0
+        bias_aro += 40.0
+    if "選課" in text and ("當機" in text or "轉圈圈" in text or "搶" in text):
+        bias_val -= 40.0
+        bias_aro += 45.0
+    if "期中" in text or "期末" in text or "考古題" in text:
+        bias_val -= 15.0
+        bias_aro += 30.0
+    if "告白" in text or "西子灣夕陽" in text or "音樂會" in text:
+        bias_val += 45.0
+        bias_aro += 15.0
+    if "獼猴" in text or "猴子" in text:
+        if "搶" in text:
+            bias_val -= 25.0
+            bias_aro += 35.0
+        else:
+            bias_val -= 5.0
+            bias_aro += 15.0
+            
+    valence += bias_val
+    arousal += bias_aro
     
-    # 4. 加上隨機微小噪聲，增加資料擬真度
-    joy_score += random.uniform(-4, 4)
-    anxiety_score += random.uniform(-4, 4)
-    anger_score += random.uniform(-4, 4)
+    # 4. 加上些許隨機微噪聲，增強資料在散點圖上的分佈與真實度
+    valence += random.uniform(-4.0, 4.0)
+    arousal += random.uniform(-4.0, 4.0)
     
-    # 5. 限制邊界於 0-100 之間
-    joy_score = max(0.0, min(100.0, joy_score))
-    anxiety_score = max(0.0, min(100.0, anxiety_score))
-    anger_score = max(0.0, min(100.0, anger_score))
+    # 5. 限幅於 [-100.0, 100.0]
+    valence = max(-100.0, min(100.0, valence))
+    arousal = max(-100.0, min(100.0, arousal))
     
-    # 6. 嚴格歸一化 (使三者總和恰好為 100.0%，以百分比佔比呈現情緒分佈)
-    total = joy_score + anxiety_score + anger_score
-    if total > 0:
-        joy_pct = (joy_score / total) * 100.0
-        anxiety_pct = (anxiety_score / total) * 100.0
-        
-        joy_final = round(joy_pct, 1)
-        anxiety_final = round(anxiety_pct, 1)
-        anger_final = round(100.0 - joy_final - anxiety_final, 1)
-    else:
-        joy_final, anxiety_final, anger_final = 30.0, 50.0, 20.0
-        
-    return joy_final, anxiety_final, anger_final
+    return round(valence, 1), round(arousal, 1)

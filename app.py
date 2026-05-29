@@ -10,6 +10,16 @@ import scraper
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import sys
+
+# ── 釋放舊的伺服器執行緒與埠口 ──
+if hasattr(sys, "dcard_http_server") and sys.dcard_http_server is not None:
+    try:
+        sys.dcard_http_server.shutdown()
+        sys.dcard_http_server.server_close()
+    except Exception:
+        pass
+    sys.dcard_http_server = None
 
 class ImportHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -48,6 +58,7 @@ class ImportHandler(BaseHTTPRequestHandler):
 def start_local_server():
     try:
         server = HTTPServer(('127.0.0.1', 8002), ImportHandler)
+        sys.dcard_http_server = server
         server.serve_forever()
     except Exception:
         pass
@@ -351,7 +362,7 @@ with st.sidebar.expander("⚙️ Dcard 爬蟲連線設定"):
     )
     ua_input = st.text_input(
         "瀏覽器 User-Agent", 
-        value=config.get("user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        value=config.get("user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/120.0.0.0")
     )
     if st.button("💾 儲存設定"):
         new_config = {"dcard_cookie": cookie_input, "user_agent": ua_input}
@@ -362,83 +373,80 @@ with st.sidebar.expander("⚙️ Dcard 爬蟲連線設定"):
             st.error("設定更新失敗")
 
     # ---- 書籤 A：自動滾動大量採集（目標 100+ 篇）----
-    bm_a_js = (
-        "javascript:(function(){"
-        "const TARGET=100;"
-        "const ROUNDS=8;"
-        "const WAIT=1800;"
-        "const seen=new Set();"
-        "const posts=[];"
-
-        "function extractVisible(){"
-        "document.querySelectorAll('a[href]').forEach(a=>{"
-        "const href=a.href||'';"
-        "const m=href.match(/\\/p\\/(\\d{5,})/);"
-        "if(!m)return;"
-        "const id=m[1];"
-        "if(seen.has(id))return;"
-        "let title='';"
-        "let card=a;"
-        "for(let i=0;i<6;i++){"
-        "if(!card.parentElement)break;"
-        "card=card.parentElement;"
-        "const hEl=card.querySelector('h1,h2,h3,h4,[class*=title],[class*=Title]');"
-        "if(hEl&&hEl.textContent.trim().length>3){title=hEl.textContent.trim();break;}"
-        "}"
-        "if(!title){const t=a.textContent.trim();if(t.length>5&&!(/^\\d/.test(t)))title=t;}"
-        "if(!title||title.length<4)return;"
-        "seen.add(id);"
-        "let excerpt='';"
-        "const allText=Array.from(card.querySelectorAll('*'))"
-        ".filter(el=>el.children.length===0).map(el=>el.textContent.trim())"
-        ".filter(t=>t.length>15&&t.length<200&&!t.includes(title)&&!(/^\\d+\\s*(天|小時|分鐘|秒|讚|則|留言)/.test(t)));"
-        "if(allText.length>0)excerpt=allText[0];"
-        "posts.push({id:parseInt(id),title,"
-        "excerpt:excerpt||'點擊連結查看貼文詳細內容',"
-        "createdAt:new Date().toISOString(),"
-        "likeCount:Math.floor(Math.random()*100)+5,"
-        "commentCount:Math.floor(Math.random()*30)+1,topics:[]});"
-        "});"
-        "}"
-
-        # auto-scroll loop using async/await via Promise chain
-        "async function scrollLoop(){"
-        "const bar=document.createElement('div');"
-        "bar.style='position:fixed;top:0;left:0;right:0;z-index:99999;"
-            "background:#0F2C59;color:#fff;font-family:sans-serif;"
-            "font-size:14px;padding:10px 16px;text-align:center;';"
-        "document.body.appendChild(bar);"
-        "extractVisible();"
-        "for(let r=0;r<ROUNDS&&posts.length<TARGET;r++){"
-        "bar.textContent='🔄 中山輿情採集中... 第'+(r+1)+'/'+ROUNDS+'輪，已收集 '+posts.length+' 篇（目標'+TARGET+'）';"
-        "window.scrollTo(0,document.body.scrollHeight);"
-        "await new Promise(res=>setTimeout(res,WAIT));"
-        "extractVisible();"
-        "}"
-        "bar.textContent='✅ 採集完成！共 '+posts.length+' 篇，正在同步...';"
-        "fetch('http://127.0.0.1:8002/import',{"
-        "method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify(posts)})"
-        ".then(r=>r.json())"
-        ".then(r=>{"
-        "bar.remove();"
-        "if(r.success)alert('🎉 同步成功！已儲存 '+r.count+' 篇真實貼文。請回儀表板按 F5 重整！');"
-        "else alert('❌ 同步失敗：'+r.message);"
-        "})"
-        ".catch(e=>{bar.remove();alert('❌ 無法連線至 Port 8002\\n'+e);});"
-        "}"
-        "scrollLoop();"
-        "})();"
-    )
+    bm_a_js = r"""javascript:(function(){
+async function runSync(){
+  const bar=document.createElement('div');
+  bar.style='position:fixed;top:0;left:0;right:0;z-index:99999;background:#0F2C59;color:#fff;font-family:sans-serif;font-size:14px;padding:10px 16px;text-align:center;';
+  document.body.appendChild(bar);
+  try{
+    const posts=[];
+    const pathM=location.pathname.match(/\/f\/([^/]+)/);
+    const forumName=pathM?pathM[1]:'nsysu';
+    let lastId=null;
+    for(let r=0;r<4;r++){
+      bar.textContent='🔄 中山輿情採集中... 正在讀取 API 第 '+(r+1)+' 批貼文...';
+      const url='/service/api/v2/forums/'+forumName+'/posts?limit=30'+(lastId?'&before='+lastId:'');
+      const res=await fetch(url,{headers:{'x-client-type':'web'}});
+      if(!res.ok){
+        throw new Error('Dcard API 請求失敗，狀態碼: ' + res.status + ' (' + res.statusText + ')。請確認您是否登入並解決了驗證碼。');
+      }
+      const batch=await res.json();
+      if(!batch || !Array.isArray(batch)){
+        throw new Error('Dcard API 回傳結構非預期陣列: ' + JSON.stringify(batch).substring(0, 100));
+      }
+      if(batch.length===0) break;
+      for(const p of batch){
+        let excerpt=p.excerpt||'';
+        if(!excerpt.trim()){
+          if(p.withVideos) excerpt='[影片貼文] 點擊連結查看詳細影片內容';
+          else if(p.withImages) excerpt='[圖片貼文] 點擊連結查看詳細圖片內容';
+          else excerpt='點擊連結查看貼文詳細內容';
+        } else {
+          if(p.withVideos) excerpt='🎥 [影片] '+excerpt;
+          else if(p.withImages) excerpt='🖼️ [圖片] '+excerpt;
+        }
+        posts.push({
+          id: p.id,
+          title: p.title,
+          excerpt: excerpt,
+          createdAt: p.createdAt,
+          likeCount: p.likeCount||0,
+          commentCount: p.commentCount||0,
+          topics: p.topics||[]
+        });
+      }
+      lastId=batch[batch.length-1].id;
+      await new Promise(res=>setTimeout(res,300));
+    }
+    if(posts.length===0){
+      throw new Error('未採集到任何貼文。請確認看板是否有貼文或重新載入頁面。');
+    }
+    bar.textContent='✅ 採集完成！共 '+posts.length+' 篇，正在同步至本機伺服器...';
+    const syncRes=await fetch('http://127.0.0.1:8002/import',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(posts)
+    });
+    const r=await syncRes.json();
+    bar.remove();
+    if(r.success) alert('🎉 同步成功！已儲存 '+r.count+' 篇真實貼文。請回儀表板按 F5 重整！');
+    else alert('❌ 同步失敗：'+r.message);
+  }catch(err){
+    bar.remove();
+    alert('❌ 採集或同步過程發生錯誤：'+err.message);
+  }
+}
+runSync();
+})();"""
     st.markdown(
-        "<b>📌 書籤 A：大量貼文採集（自動滾動，目標 100+ 篇）</b>",
+        "<b>📌 書籤 A：大量貼文採集（免滾動，目標 100+ 篇）</b>",
         unsafe_allow_html=True
     )
     st.markdown(
         "<div style='font-size:12px;color:#64748B;line-height:1.5;'>"
         "1. 複製下方代碼，建立瀏覽器書籤（命名為『Dcard 大量採集』）。<br>"
         "2. 前往 <a href='https://www.dcard.tw/f/nsysu' target='_blank'>Dcard 中山大學版</a> 並等待頁面載入。<br>"
-        "3. 點擊書籤，頁面頂端會出現藍色進度條並自動滾動（約 15 秒）。<br>"
+        "3. 點擊書籤，頁面頂端會出現進度條並在數秒內完成採集（利用內部 API，免自動滾動）。<br>"
         "4. 完成後切回儀表板按 F5 重整。"
         "</div>",
         unsafe_allow_html=True
@@ -448,58 +456,72 @@ with st.sidebar.expander("⚙️ Dcard 爬蟲連線設定"):
     st.markdown("---")
 
     # ---- 書籤 B：單篇貼文留言採集 ----
-    bm_b_js = (
-        "javascript:(function(){"
-        # extract post_id from current URL
-        "const urlM=location.pathname.match(/\\/p\\/(\\d+)/);"
-        "if(!urlM){alert('❌ 請先開啟一篇 Dcard 中山大學板的貼文頁面！');return;}"
-        "const postId=urlM[1];"
-        # get post title
-        "const titleEl=document.querySelector('h1,h2,[class*=title],[class*=Title]');"
-        "const postTitle=titleEl?titleEl.textContent.trim():'未知標題';"
-        # extract all comment elements
-        "const comments=[];"
-        "let floor=1;"
-        "document.querySelectorAll('[class*=comment],[class*=Comment],[data-key]').forEach(el=>{"
-        "if(el.children.length>3)return;"
-        "const txt=el.textContent.trim();"
-        "if(txt.length<3||txt.length>600)return;"
-        # skip nav/UI text
-        "if(/^(\\d+讚|\\d+則|回覆|檢舉|更多|分享|追蹤)$/.test(txt))return;"
-        "comments.push({floor:floor++,content:txt,likeCount:0});"
-        "});"
-        "if(comments.length===0){"
-        # fallback: grab all leaf text nodes >= 10 chars
-        "document.querySelectorAll('p,span,div').forEach(el=>{"
-        "if(el.children.length>0)return;"
-        "const txt=el.textContent.trim();"
-        "if(txt.length<10||txt.length>500)return;"
-        "if(/^(\\d+讚|回覆|檢舉|更多)$/.test(txt))return;"
-        "comments.push({floor:floor++,content:txt,likeCount:0});"
-        "});"
-        "}"
-        "if(comments.length===0){alert('❌ 找不到留言！請確認頁面已完整載入。');return;}"
-        "const payload={post_id:postId,post_title:postTitle,comments};"
-        "fetch('http://127.0.0.1:8002/import_comments',{"
-        "method:'POST',headers:{'Content-Type':'application/json'},"
-        "body:JSON.stringify(payload)})"
-        ".then(r=>r.json())"
-        ".then(r=>{"
-        "if(r.success)alert('💬 留言同步成功！已儲存 '+r.count+' 則留言。請回儀表板查看分析！');"
-        "else alert('❌ 留言同步失敗：'+r.message);"
-        "})"
-        ".catch(e=>alert('❌ 無法連線至 Port 8002\\n'+e));"
-        "})();"
-    )
+    bm_b_js = r"""javascript:(function(){
+async function runSync(){
+  const urlM=location.pathname.match(/\/p\/(\d+)/);
+  if(!urlM){alert('❌ 請先開啟一篇 Dcard 中山大學板的貼文頁面！');return;}
+  const postId=urlM[1];
+  const bar=document.createElement('div');
+  bar.style='position:fixed;top:0;left:0;right:0;z-index:99999;background:#0F2C59;color:#fff;font-family:sans-serif;font-size:14px;padding:10px 16px;text-align:center;';
+  document.body.appendChild(bar);
+  try{
+    bar.textContent='🔄 正在讀取貼文留言 API...';
+    const titleEl=document.querySelector('h1,h2,[class*=title],[class*=Title]');
+    const postTitle=titleEl?titleEl.textContent.trim():'未知標題';
+    const url='/service/api/v2/posts/'+postId+'/comments?limit=100';
+    const res=await fetch(url,{headers:{'x-client-type':'web'}});
+    if(!res.ok) throw new Error('Dcard API 請求失敗，狀態碼: ' + res.status + ' (' + res.statusText + ')');
+    const batch=await res.json();
+    if(!batch || !Array.isArray(batch)){
+      throw new Error('Dcard API 留言結構非預期陣列: ' + JSON.stringify(batch).substring(0, 100));
+    }
+    if(batch.length===0){
+      bar.remove();
+      alert('❌ 找不到留言，可能該貼文尚未有留言或 API 被封鎖。');
+      return;
+    }
+    const comments=[];
+    for(const c of batch){
+      if(c.hidden||!c.content||c.content.trim().length<2) continue;
+      comments.push({
+        floor: c.floor,
+        content: c.content.trim(),
+        createdAt: c.createdAt,
+        likeCount: c.likeCount||0
+      });
+    }
+    if(comments.length===0){
+      bar.remove();
+      alert('❌ 無有效留言內容（可能均被隱藏或刪除）。');
+      return;
+    }
+    bar.textContent='✅ 讀取完成！共 '+comments.length+' 則留言，正在同步...';
+    const payload={post_id:postId,post_title:postTitle,comments};
+    const syncRes=await fetch('http://127.0.0.1:8002/import_comments',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const r=await syncRes.json();
+    bar.remove();
+    if(r.success) alert('💬 留言同步成功！已儲存 '+r.count+' 則留言。請回儀表板查看分析！');
+    else alert('❌ 留言同步失敗：'+r.message);
+  }catch(err){
+    bar.remove();
+    alert('❌ 留言採集或同步過程發生錯誤：'+err.message);
+  }
+}
+runSync();
+})();"""
     st.markdown(
-        "<b>📌 書籤 B：單篇貼文留言採集</b>",
+        "<b>📌 書籤 B：單篇貼文留言採集 (API 版)</b>",
         unsafe_allow_html=True
     )
     st.markdown(
         "<div style='font-size:12px;color:#64748B;line-height:1.5;'>"
         "1. 複製下方代碼，建立書籤（命名為『Dcard 留言採集』）。<br>"
         "2. 在儀表板貼文列表中點擊任一真實貼文連結 🔗。<br>"
-        "3. 等頁面與留言完全載入後，點擊書籤。<br>"
+        "3. 開啟文章頁面後直接點擊書籤，數秒內即可自動透過 API 採集留言。<br>"
         "4. 看到成功訊息後，切回儀表板底部查看「💬 留言分析」區塊。"
         "</div>",
         unsafe_allow_html=True
@@ -571,9 +593,9 @@ except Exception as e:
     st.error(f"⚠️ 從資料庫載入篩選數據時發生錯誤：{str(e)}")
     filtered_posts = pd.DataFrame(columns=[
         "post_id", "title", "content", "category", "created_at",
-        "joy_score", "anxiety_score", "anger_score", "like_count", "comment_count", "keywords"
+        "valence_score", "arousal_score", "like_count", "comment_count", "keywords"
     ])
-    filtered_daily = pd.DataFrame(columns=["date", "avg_joy", "avg_anxiety", "avg_anger", "total_posts"])
+    filtered_daily = pd.DataFrame(columns=["date", "avg_valence", "avg_arousal", "total_posts"])
 
 
 # ==============================================================================
@@ -588,26 +610,21 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 異常警報器 (偵測焦慮或憤怒是否異常飆高)
-# 邏輯：檢查篩選區間內，是否有任何一天的 憤怒 或 焦慮 平均分數高於 75 分
+# 異常警報器 (偵測是否出現激動且負面情緒爆發)
+# 邏輯：檢查篩選區間內，是否任何一天的平均效價 (avg_valence) 低於 -30 且平均喚起度 (avg_arousal) 高於 40
 anomaly_days = filtered_daily[
-    (filtered_daily["avg_anger"] > 75) | (filtered_daily["avg_anxiety"] > 75)
+    (filtered_daily["avg_valence"] < -30) & (filtered_daily["avg_arousal"] > 40)
 ]
 
 if not anomaly_days.empty:
     for _, row in anomaly_days.iterrows():
         event_date = row["date"].strftime("%Y-%m-%d")
-        reason = []
-        if row["avg_anger"] > 75:
-            reason.append("憤怒指數飆升")
-        if row["avg_anxiety"] > 75:
-            reason.append("焦慮指數高漲")
         
         st.markdown(
             f"""
             <div style="background-color: #FEF2F2; border-left: 4px solid #EF4444; padding: 12px 16px; border-radius: 4px; margin-bottom: 24px;">
                 <span style="color: #991B1B; font-weight: 700; font-size: 14px;">⚠️ 社群情緒異常警報 ({event_date})</span><br>
-                <span style="color: #7F1D1D; font-size: 13px;">當日平均 {' 及 '.join(reason)}。輿情觀測顯示可能原因為：<b>期中考試壓力</b> 與 <b>宿舍停水/選課系統負載過重</b> 重疊發生。</span>
+                <span style="color: #7F1D1D; font-size: 13px;">當日平均<b>效價偏低 ({row["avg_valence"]:+.1f}) 且喚起度飆高 ({row["avg_arousal"]:+.1f})</b>，情緒狀態高度緊繃。輿情觀測顯示可能原因為：<b>期中考試壓力</b> 與 <b>宿舍停水/選課系統負載過重</b> 重疊發生。</span>
             </div>
             """,
             unsafe_allow_html=True
@@ -626,27 +643,30 @@ try:
         unique_words.update(kw_list)
     total_vocab = len(unique_words)
     
-    # 今日/最新一天的整體情緒指標
+    # 今日/最新一天的整體情緒指標 (Valence-Arousal 版)
     latest_day_data = filtered_daily.iloc[-1] if not filtered_daily.empty else None
     
     if latest_day_data is not None:
-        joy = latest_day_data["avg_joy"]
-        anxiety = latest_day_data["avg_anxiety"]
-        anger = latest_day_data["avg_anger"]
+        val = latest_day_data["avg_valence"]
+        aro = latest_day_data["avg_arousal"]
         
         # 綜合判定今日校園氛圍
-        if anxiety > joy and anxiety > anger:
-            mood_status = "期中焦慮 🫠"
-            mood_color = "#F59E0B"
-            mood_desc = f"焦慮 {anxiety}% 占主導"
-        elif anger > joy and anger > anxiety:
-            mood_status = "躁動不滿 🌋"
-            mood_color = "#EF4444"
-            mood_desc = f"憤怒 {anger}% 偏高"
+        if val >= 0 and aro >= 0:
+            mood_status = "激動正向 🚀"
+            mood_color = "#10B981" # 綠色
+            mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (積極興奮)"
+        elif val < 0 and aro >= 0:
+            mood_status = "激動負向 🌋"
+            mood_color = "#EF4444" # 紅色
+            mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (焦慮憤怒)"
+        elif val < 0 and aro < 0:
+            mood_status = "平靜負向 ❄️"
+            mood_color = "#64748B" # 灰色
+            mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (沮喪無奈)"
         else:
-            mood_status = "平和歡樂 🌊"
-            mood_color = "#10B981"
-            mood_desc = f"歡樂 {joy}% 居多"
+            mood_status = "平靜正向 🌊"
+            mood_color = "#3B82F6" # 藍色
+            mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (放鬆愜意)"
     else:
         mood_status = "無數據 📭"
         mood_color = "#94A3B8"
@@ -688,6 +708,48 @@ try:
         </div>
         """, unsafe_allow_html=True)
 
+    # ── 情緒分佈百分比計算與渲染 ──
+    if total_posts > 0:
+        pos_p = (filtered_posts["valence_score"] >= 0).sum()
+        neg_p = total_posts - pos_p
+        exc_p = (filtered_posts["arousal_score"] >= 0).sum()
+        cal_p = total_posts - exc_p
+        
+        pos_pct = (pos_p / total_posts) * 100
+        neg_pct = (neg_p / total_posts) * 100
+        exc_pct = (exc_p / total_posts) * 100
+        cal_pct = (cal_p / total_posts) * 100
+        
+        st.markdown(f"""
+        <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px; margin-top: 10px;">
+            <div style="color: #0F2C59; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                📊 貼文整體情緒分佈比例 (Valence-Arousal Distribution)
+            </div>
+            <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; margin-bottom: 6px;">
+                        <span style="color: #EF4444;">🔴 負向偏向 (Valence &lt; 0): {neg_pct:.1f}%</span>
+                        <span style="color: #10B981;">🟢 正向偏向 (Valence &ge; 0): {pos_pct:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; background-color: #E2E8F0;">
+                        <div style="width: {neg_pct}%; background-color: #EF4444;"></div>
+                        <div style="width: {pos_pct}%; background-color: #10B981;"></div>
+                    </div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; margin-bottom: 6px;">
+                        <span style="color: #3B82F6;">🔵 冷靜平靜 (Arousal &lt; 0): {cal_pct:.1f}%</span>
+                        <span style="color: #F59E0B;">🟠 激動興奮 (Arousal &ge; 0): {exc_pct:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; background-color: #E2E8F0;">
+                        <div style="width: {cal_pct}%; background-color: #3B82F6;"></div>
+                        <div style="width: {exc_pct}%; background-color: #F59E0B;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 except Exception as e:
     st.error(f"渲染 Metrics 區塊時發生錯誤: {str(e)}")
 
@@ -709,40 +771,29 @@ with chart_col1:
     )
     
     try:
-        # 使用 Plotly Graph Objects 繪製精緻的折線圖
+        # 使用 Plotly Graph Objects 繪製精緻的 Valence-Arousal 折線圖
         fig_line = go.Figure()
         
-        # 歡樂折線 (Joy)
+        # 效價折線 (Valence)
         fig_line.add_trace(go.Scatter(
             x=filtered_daily["date"], 
-            y=filtered_daily["avg_joy"],
+            y=filtered_daily["avg_valence"],
             mode='lines+markers',
-            name='歡樂 (Joy)',
-            line=dict(color='#10B981', width=3, shape='spline'),
-            marker=dict(size=6, color='#FFFFFF', line=dict(color='#10B981', width=2)),
-            hovertemplate="日期: %{x}<br>歡樂分數: %{y}%<extra></extra>"
+            name='情緒效價 (Valence) · 好壞偏向',
+            line=dict(color='#3B82F6', width=3, shape='spline'),
+            marker=dict(size=6, color='#FFFFFF', line=dict(color='#3B82F6', width=2)),
+            hovertemplate="日期: %{x}<br>平均效價: %{y:+.1f}<extra></extra>"
         ))
         
-        # 焦慮折線 (Anxiety)
+        # 喚起度折線 (Arousal)
         fig_line.add_trace(go.Scatter(
             x=filtered_daily["date"], 
-            y=filtered_daily["avg_anxiety"],
+            y=filtered_daily["avg_arousal"],
             mode='lines+markers',
-            name='焦慮 (Anxiety)',
+            name='情緒喚起 (Arousal) · 激動程度',
             line=dict(color='#F59E0B', width=3, shape='spline'),
             marker=dict(size=6, color='#FFFFFF', line=dict(color='#F59E0B', width=2)),
-            hovertemplate="日期: %{x}<br>焦慮分數: %{y}%<extra></extra>"
-        ))
-        
-        # 憤怒折線 (Anger)
-        fig_line.add_trace(go.Scatter(
-            x=filtered_daily["date"], 
-            y=filtered_daily["avg_anger"],
-            mode='lines+markers',
-            name='憤怒 (Anger)',
-            line=dict(color='#EF4444', width=3, shape='spline'),
-            marker=dict(size=6, color='#FFFFFF', line=dict(color='#EF4444', width=2)),
-            hovertemplate="日期: %{x}<br>憤怒分數: %{y}%<extra></extra>"
+            hovertemplate="日期: %{x}<br>平均喚起: %{y:+.1f}<extra></extra>"
         ))
         
         # 自訂圖表佈局，符合純白學術極簡風格
@@ -771,9 +822,18 @@ with chart_col1:
                 gridcolor='#F1F5F9',
                 tickfont=dict(color='#64748B', size=11),
                 linecolor='#E2E8F0',
-                title=dict(text="情緒指數 (%)", font=dict(size=12, color="#64748B")),
-                range=[0, 105]
+                title=dict(text="指標分數 (-100 至 +100)", font=dict(size=12, color="#64748B")),
+                range=[-105, 105]
             )
+        )
+        # 增加一條 Y=0 的虛線基準線
+        fig_line.add_shape(
+            type="line",
+            x0=filtered_daily["date"].min() if not filtered_daily.empty else 0,
+            y0=0,
+            x1=filtered_daily["date"].max() if not filtered_daily.empty else 1,
+            y1=0,
+            line=dict(color="#CBD5E1", width=1, dash="dash")
         )
         
         st.plotly_chart(fig_line, use_container_width=True)
@@ -849,6 +909,74 @@ with chart_col2:
         
     st.markdown("</div>", unsafe_allow_html=True)
 
+# --- 2D 社群輿情分佈平面圖 (Valence-Arousal Scatter Plot) ---
+st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+st.markdown(
+    "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
+    "<h3 style='color:#0F2C59; font-size:16px; font-weight:600; margin-top:0px; margin-bottom:5px;'>🎯 2D 社群輿情象限平面圖 (Valence-Arousal)</h3>"
+    "<p style='color:#64748B; font-size:13px; margin-top:0px; margin-bottom:15px;'>將貼文定位在「好惡效價」與「喚起激動度」平面上，展示當前社群情緒聚類</p>", 
+    unsafe_allow_html=True
+)
+
+try:
+    if not filtered_posts.empty:
+        df_va = filtered_posts.copy()
+        df_va["short_title"] = df_va["title"].apply(lambda t: t[:20] + "..." if isinstance(t, str) and len(t) > 20 else t)
+        
+        def get_quadrant(row):
+            v, a = row["valence_score"], row["arousal_score"]
+            if v >= 0 and a >= 0: return "第一象限：積極興奮 🚀"
+            elif v < 0 and a >= 0: return "第二象限：焦慮憤怒 🌋"
+            elif v < 0 and a < 0: return "第三象限：沮喪消極 ❄️"
+            else: return "第四象限：平靜放鬆 🌊"
+            
+        df_va["象限"] = df_va.apply(get_quadrant, axis=1)
+        
+        fig_va = px.scatter(
+            df_va,
+            x="valence_score",
+            y="arousal_score",
+            color="category",
+            size=df_va["like_count"].apply(lambda x: max(10, min(x + 10, 50))),
+            text="short_title",
+            hover_name="title",
+            custom_data=df_va[["like_count", "comment_count", "象限"]],
+            labels={
+                "valence_score": "情緒效價 (Valence - 負向極端至正向極端)",
+                "arousal_score": "情緒喚起 (Arousal - 平靜冷靜至高亢激動)",
+                "category": "討論主題"
+            }
+        )
+        
+        fig_va.update_traces(
+            hovertemplate="<b>%{hovertext}</b><br>討論主題: %{legendgroup}<br>情緒效價: %{x:+.1f}<br>情緒喚起: %{y:+.1f}<br>象限歸屬: %{customdata[2]}<br>讚數: %{customdata[0]}<br>留言數: %{customdata[1]}<extra></extra>",
+            textposition="top center",
+            textfont_size=9
+        )
+        
+        fig_va.add_shape(type="line", x0=-105, y0=0, x1=105, y1=0, line=dict(color="#E2E8F0", width=1.5, dash="dash"))
+        fig_va.add_shape(type="line", x0=0, y0=-105, x1=0, y1=105, line=dict(color="#E2E8F0", width=1.5, dash="dash"))
+        
+        fig_va.add_annotation(x=70, y=85, text="<b>第一象限：積極興奮 🚀</b>", showarrow=False, font=dict(color="#10B981", size=11))
+        fig_va.add_annotation(x=-70, y=85, text="<b>第二象限：焦慮憤怒 🌋</b>", showarrow=False, font=dict(color="#EF4444", size=11))
+        fig_va.add_annotation(x=-70, y=-85, text="<b>第三象限：沮喪消極 ❄️</b>", showarrow=False, font=dict(color="#64748B", size=11))
+        fig_va.add_annotation(x=70, y=-85, text="<b>第四象限：平靜放鬆 🌊</b>", showarrow=False, font=dict(color="#3B82F6", size=11))
+        
+        fig_va.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            height=450,
+            margin=dict(l=40, r=40, t=10, b=40),
+            xaxis=dict(range=[-105, 105], showgrid=True, gridcolor='#F1F5F9', linecolor='#E2E8F0'),
+            yaxis=dict(range=[-105, 105], showgrid=True, gridcolor='#F1F5F9', linecolor='#E2E8F0'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_va, use_container_width=True)
+    else:
+        st.info("💡 當前無資料可繪製分佈圖。")
+except Exception as e:
+    st.error(f"象限圖渲染失敗: {str(e)}")
+st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
@@ -941,7 +1069,7 @@ with topic_col2:
     st.markdown("<p style='margin-top: 20px;'></p>", unsafe_allow_html=True)
     
     # 準備下載用的 CSV 數據
-    export_df = filtered_posts[["post_id", "title", "category", "created_at", "joy_score", "anxiety_score", "anger_score", "like_count"]].copy()
+    export_df = filtered_posts[["post_id", "title", "category", "created_at", "valence_score", "arousal_score", "like_count"]].copy()
     export_df["created_at"] = export_df["created_at"].dt.strftime("%Y-%m-%d %H:%M")
     csv_data = export_df.to_csv(index=False).encode('utf-8-sig') # 帶 BOM 的 UTF-8 避免 Excel 開啟亂碼
     
@@ -1080,15 +1208,15 @@ else:
     search_posts = filtered_posts
 
 # 排序方式選擇
-sort_option = st.selectbox("排序方式", ["依發文時間 (新到舊)", "依按讚數 (高到低)", "依焦慮分數 (高到低)", "依憤怒分數 (高到低)"])
+sort_option = st.selectbox("排序方式", ["依發文時間 (新到舊)", "依按讚數 (高到低)", "依激動度 (喚起度高到低)", "依負向度 (效價分數低到高)"])
 if sort_option == "依發文時間 (新到舊)":
     search_posts = search_posts.sort_values(by="created_at", ascending=False)
 elif sort_option == "依按讚數 (高到低)":
     search_posts = search_posts.sort_values(by="like_count", ascending=False)
-elif sort_option == "依焦慮分數 (高到低)":
-    search_posts = search_posts.sort_values(by="anxiety_score", ascending=False)
+elif sort_option == "依激動度 (喚起度高到低)":
+    search_posts = search_posts.sort_values(by="arousal_score", ascending=False)
 else:
-    search_posts = search_posts.sort_values(by="anger_score", ascending=False)
+    search_posts = search_posts.sort_values(by="valence_score", ascending=True)
 
 # 顯示貼文列表
 st.markdown(f"<p style='color:#64748B; font-size:14px;'>共檢索出 <b>{len(search_posts)}</b> 篇貼文：</p>", unsafe_allow_html=True)
@@ -1106,11 +1234,37 @@ if not search_posts.empty:
         
         post_date = row["created_at"].strftime("%Y-%m-%d %H:%M")
         
-        # 組合情緒標籤樣式 (扁平單行，避免縮進造成解析錯誤)
+        # 組合情緒標籤樣式 (Valence-Arousal 雙 badge 百分比化)
+        val = row["valence_score"]
+        aro = row["arousal_score"]
+        
+        # 效價 (Valence) 轉百分比
+        if val >= 0:
+            val_pct = 50.0 + (val / 2.0)
+            val_text_show = f"🟢 正向 {val_pct:.1f}%"
+            val_bg = "#ECFDF5"
+            val_txt = "#047857"
+        else:
+            val_pct = 50.0 - (val / 2.0)
+            val_text_show = f"🔴 負向 {val_pct:.1f}%"
+            val_bg = "#FEF2F2"
+            val_txt = "#B91C1C"
+            
+        # 喚起度 (Arousal) 轉百分比
+        if aro >= 0:
+            aro_pct = 50.0 + (aro / 2.0)
+            aro_text_show = f"🟠 激動 {aro_pct:.1f}%"
+            aro_bg = "#FFFBEB"
+            aro_txt = "#B45309"
+        else:
+            aro_pct = 50.0 - (aro / 2.0)
+            aro_text_show = f"🔵 冷靜 {aro_pct:.1f}%"
+            aro_bg = "#EFF6FF"
+            aro_txt = "#1E40AF"
+            
         sentiment_pills = (
-            f'<span style="background-color: #ECFDF5; color: #047857; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 6px;">🟢 歡樂 {row["joy_score"]}%</span>'
-            f'<span style="background-color: #FFFBEB; color: #B45309; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 6px;">🟡 焦慮 {row["anxiety_score"]}%</span>'
-            f'<span style="background-color: #FEF2F2; color: #B91C1C; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🔴 憤怒 {row["anger_score"]}%</span>'
+            f'<span style="background-color: {val_bg}; color: {val_txt}; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 6px;">{val_text_show}</span>'
+            f'<span style="background-color: {aro_bg}; color: {aro_txt}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">{aro_text_show}</span>'
         )
         
         # 判斷是否為真實貼文 (Dcard ID 是純數字，模擬貼文以 M_ 或 D_ 開頭的模擬編號)
@@ -1178,21 +1332,65 @@ else:
         # ── 統計數字列 ──
         total_comments = df_recent_comments.shape[0]
         total_posts_with_comments = df_comment_summary.shape[0]
-        avg_joy_all = df_recent_comments["joy_score"].mean()
-        avg_anxiety_all = df_recent_comments["anxiety_score"].mean()
-        avg_anger_all = df_recent_comments["anger_score"].mean()
-        dominant = max(
-            {"歡樂": avg_joy_all, "焦慮": avg_anxiety_all, "憤怒": avg_anger_all},
-            key=lambda k: {"歡樂": avg_joy_all, "焦慮": avg_anxiety_all, "憤怒": avg_anger_all}[k]
-        )
+        avg_val_all = df_recent_comments["valence_score"].mean()
+        avg_aro_all = df_recent_comments["arousal_score"].mean()
+        
+        # 判定主要情緒象限
+        if avg_val_all >= 0 and avg_aro_all >= 0:
+            dominant = "積極興奮 🚀"
+        elif avg_val_all < 0 and avg_aro_all >= 0:
+            dominant = "焦慮憤怒 🌋"
+        elif avg_val_all < 0 and avg_aro_all < 0:
+            dominant = "沮喪無奈 ❄️"
+        else:
+            dominant = "放鬆平靜 🌊"
 
         mc1, mc2, mc3, mc4 = st.columns(4)
         mc1.metric("已採集留言數", f"{total_comments} 則")
-        mc2.metric("涵蓋貼文數", f"{total_posts_with_comments} 篇")
-        mc3.metric("留言平均歡樂", f"{avg_joy_all:.1f}%")
-        mc4.metric("留言主要情緒", dominant)
+        mc2.metric("留言平均效價", f"{avg_val_all:+.1f}")
+        mc3.metric("留言平均喚起", f"{avg_aro_all:+.1f}")
+        mc4.metric("留言主要氛圍", dominant)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        # ── 留言情緒分佈百分比計算與渲染 ──
+        c_pos_p = (df_recent_comments["valence_score"] >= 0).sum()
+        c_neg_p = total_comments - c_pos_p
+        c_exc_p = (df_recent_comments["arousal_score"] >= 0).sum()
+        c_cal_p = total_comments - c_exc_p
+        
+        c_pos_pct = (c_pos_p / total_comments) * 100 if total_comments > 0 else 0
+        c_neg_pct = (c_neg_p / total_comments) * 100 if total_comments > 0 else 0
+        c_exc_pct = (c_exc_p / total_comments) * 100 if total_comments > 0 else 0
+        c_cal_pct = (c_cal_p / total_comments) * 100 if total_comments > 0 else 0
+
+        st.markdown(f"""
+        <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-top: 10px; margin-bottom: 20px;">
+            <div style="color: #0F2C59; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                💬 留言整體情緒分佈比例 (Valence-Arousal Distribution)
+            </div>
+            <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 6px;">
+                        <span style="color: #EF4444;">🔴 負向偏向 (Valence &lt; 0): {c_neg_pct:.1f}%</span>
+                        <span style="color: #10B981;">🟢 正向偏向 (Valence &ge; 0): {c_pos_pct:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background-color: #E2E8F0;">
+                        <div style="width: {c_neg_pct}%; background-color: #EF4444;"></div>
+                        <div style="width: {c_pos_pct}%; background-color: #10B981;"></div>
+                    </div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 6px;">
+                        <span style="color: #3B82F6;">🔵 冷靜平靜 (Arousal &lt; 0): {c_cal_pct:.1f}%</span>
+                        <span style="color: #F59E0B;">🟠 激動興奮 (Arousal &ge; 0): {c_exc_pct:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background-color: #E2E8F0;">
+                        <div style="width: {c_cal_pct}%; background-color: #3B82F6;"></div>
+                        <div style="width: {c_exc_pct}%; background-color: #F59E0B;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         ca_col, cb_col = st.columns([3, 2])
 
@@ -1211,34 +1409,27 @@ else:
             )
             fig_bar = go.Figure()
             fig_bar.add_trace(go.Bar(
-                name="歡樂", y=top_n["short_title"], x=top_n["avg_joy"],
+                name="平均效價 (Valence)", y=top_n["short_title"], x=top_n["avg_valence"],
                 orientation="h",
-                marker_color="#10B981",
-                text=top_n["avg_joy"].apply(lambda v: f"{v:.1f}%"),
+                marker_color="#3B82F6",
+                text=top_n["avg_valence"].apply(lambda v: f"{v:+.1f}"),
                 textposition="inside"
             ))
             fig_bar.add_trace(go.Bar(
-                name="焦慮", y=top_n["short_title"], x=top_n["avg_anxiety"],
+                name="平均喚起 (Arousal)", y=top_n["short_title"], x=top_n["avg_arousal"],
                 orientation="h",
                 marker_color="#F59E0B",
-                text=top_n["avg_anxiety"].apply(lambda v: f"{v:.1f}%"),
-                textposition="inside"
-            ))
-            fig_bar.add_trace(go.Bar(
-                name="憤怒", y=top_n["short_title"], x=top_n["avg_anger"],
-                orientation="h",
-                marker_color="#EF4444",
-                text=top_n["avg_anger"].apply(lambda v: f"{v:.1f}%"),
+                text=top_n["avg_arousal"].apply(lambda v: f"{v:+.1f}"),
                 textposition="inside"
             ))
             fig_bar.update_layout(
-                barmode="stack",
-                height=max(300, len(top_n) * 48),
+                barmode="group",
+                height=max(300, len(top_n) * 55),
                 margin=dict(l=10, r=10, t=10, b=10),
                 paper_bgcolor="white",
                 plot_bgcolor="white",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(title="情緒佔比 (%)", range=[0, 100]),
+                xaxis=dict(title="得分強度 (-100 至 +100)", range=[-105, 105]),
                 yaxis=dict(autorange="reversed"),
                 font=dict(family="Inter, Noto Sans TC, sans-serif", size=12)
             )
@@ -1248,11 +1439,11 @@ else:
             # ── 貼文 vs 留言情緒對比散點圖 ──
             st.markdown(
                 "<h4 style='color:#1E293B;font-size:15px;font-weight:600;margin-bottom:8px;'>"
-                "貼文 vs 留言：焦慮情緒落差"
+                "貼文 vs 留言：效價正負落差對比"
                 "</h4>"
                 "<p style='color:#64748B;font-size:12px;'>"
-                "X 軸為貼文本身的焦慮分數，Y 軸為該貼文留言的平均焦慮。"
-                "落點偏離對角線越遠，代表讀者感受與原文落差越大。"
+                "X 軸為貼文本身的效價分數，Y 軸為該貼文留言的平均效價。"
+                "落點偏離對角線越遠，代表讀者感受與原文好惡有落差。"
                 "</p>",
                 unsafe_allow_html=True
             )
@@ -1260,7 +1451,7 @@ else:
             try:
                 conn_tmp = db_manager.get_connection()
                 df_posts_tmp = pd.read_sql_query(
-                    "SELECT post_id, anxiety_score as post_anxiety FROM posts", conn_tmp
+                    "SELECT post_id, valence_score as post_valence FROM posts", conn_tmp
                 )
                 conn_tmp.close()
                 df_scatter = df_comment_summary.merge(df_posts_tmp, on="post_id", how="inner")
@@ -1270,20 +1461,20 @@ else:
                     )
                     fig_scatter = px.scatter(
                         df_scatter,
-                        x="post_anxiety", y="avg_anxiety",
+                        x="post_valence", y="avg_valence",
                         text="short_title",
                         size="comment_count",
-                        color="avg_anger",
-                        color_continuous_scale="Oranges",
+                        color="avg_arousal",
+                        color_continuous_scale="RdYlBu_r",
                         labels={
-                            "post_anxiety": "貼文焦慮分數 (%)",
-                            "avg_anxiety": "留言平均焦慮 (%)",
-                            "avg_anger": "留言平均憤怒"
+                            "post_valence": "貼文效價分數",
+                            "avg_valence": "留言平均效價",
+                            "avg_arousal": "留言平均喚起 (激動)"
                         }
                     )
                     fig_scatter.add_shape(
                         type="line", line=dict(dash="dot", color="#CBD5E1", width=1.5),
-                        x0=0, y0=0, x1=100, y1=100
+                        x0=-100, y0=-100, x1=100, y1=100
                     )
                     fig_scatter.update_traces(textposition="top center", textfont_size=9)
                     fig_scatter.update_layout(
@@ -1307,14 +1498,33 @@ else:
         )
         show_comments = df_recent_comments.head(20)
         for _, crow in show_comments.iterrows():
-            dominant_emotion = max(
-                {"🟢 歡樂": crow["joy_score"],
-                 "🟡 焦慮": crow["anxiety_score"],
-                 "🔴 憤怒": crow["anger_score"]},
-                key=lambda k: {"🟢 歡樂": crow["joy_score"],
-                               "🟡 焦慮": crow["anxiety_score"],
-                               "🔴 憤怒": crow["anger_score"]}[k]
-            )
+            val = crow["valence_score"]
+            aro = crow["arousal_score"]
+            
+            # 效價 (Valence) 轉百分比
+            if val >= 0:
+                val_pct = 50.0 + (val / 2.0)
+                val_text_show = f"🟢 正向 {val_pct:.1f}%"
+                val_bg = "#ECFDF5"
+                val_txt = "#047857"
+            else:
+                val_pct = 50.0 - (val / 2.0)
+                val_text_show = f"🔴 負向 {val_pct:.1f}%"
+                val_bg = "#FEF2F2"
+                val_txt = "#B91C1C"
+                
+            # 喚起度 (Arousal) 轉百分比
+            if aro >= 0:
+                aro_pct = 50.0 + (aro / 2.0)
+                aro_text_show = f"🟠 激動 {aro_pct:.1f}%"
+                aro_bg = "#FFFBEB"
+                aro_txt = "#B45309"
+            else:
+                aro_pct = 50.0 - (aro / 2.0)
+                aro_text_show = f"🔵 冷靜 {aro_pct:.1f}%"
+                aro_bg = "#EFF6FF"
+                aro_txt = "#1E40AF"
+            
             ptitle = crow.get("post_title", "")
             ptitle = (ptitle[:25] + "…") if isinstance(ptitle, str) and len(ptitle) > 25 else ptitle
             comment_html = (
@@ -1324,8 +1534,10 @@ else:
                 f"B{crow['floor']} · {ptitle}</div>"
                 f"<div style='font-size:14px;color:#1E293B;line-height:1.5;margin-bottom:6px;'>"
                 f"{crow['content'][:200]}</div>"
-                f"<span style='font-size:11px;background:#E0F2FE;color:#0369A1;"
-                f"padding:2px 8px;border-radius:12px;'>{dominant_emotion}</span>"
+                f"<span style='font-size:11px;background:{val_bg};color:{val_txt};"
+                f"padding:2px 8px;border-radius:12px;margin-right:6px;'>{val_text_show}</span>"
+                f"<span style='font-size:11px;background:{aro_bg};color:{aro_txt};"
+                f"padding:2px 8px;border-radius:12px;'>{aro_text_show}</span>"
                 f"</div>"
             )
             st.markdown(comment_html, unsafe_allow_html=True)

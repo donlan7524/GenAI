@@ -13,12 +13,13 @@ def get_connection(db_path=DB_FILE):
 
 def init_db(db_path=DB_FILE):
     """
-    初始化資料表：posts, keywords, daily_summary, comments。
+    初始化資料表：posts, keywords, daily_summary, comments，並建立 Valence-Arousal 模型欄位。
     """
     conn = get_connection(db_path)
     cursor = conn.cursor()
     
-    # 建立貼文主表
+    # 建立新結構的貼文主表
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS posts (
         post_id TEXT PRIMARY KEY,
@@ -26,9 +27,8 @@ def init_db(db_path=DB_FILE):
         content TEXT,
         category TEXT,
         created_at TEXT,
-        joy_score REAL,
-        anxiety_score REAL,
-        anger_score REAL,
+        valence_score REAL DEFAULT 0.0,
+        arousal_score REAL DEFAULT 0.0,
         like_count INTEGER,
         comment_count INTEGER
     )
@@ -41,31 +41,29 @@ def init_db(db_path=DB_FILE):
         word TEXT,
         weight REAL,
         PRIMARY KEY (post_id, word),
-        FOREIGN KEY (post_id) REFERENCES posts (post_id) ON DELETE CASCADE
+        FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
     )
     """)
     
-    # 建立每日情緒統計表
+    # 建立每日情緒統計表 (Valence-Arousal 版)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS daily_summary (
         date TEXT PRIMARY KEY,
-        avg_joy REAL,
-        avg_anxiety REAL,
-        avg_anger REAL,
+        avg_valence REAL DEFAULT 0.0,
+        avg_arousal REAL DEFAULT 0.0,
         total_posts INTEGER
     )
     """)
 
-    # 建立留言表
+    # 建立留言表 (Valence-Arousal 版)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS comments (
         comment_id   TEXT PRIMARY KEY,
         post_id      TEXT NOT NULL,
         content      TEXT,
         floor        INTEGER,
-        joy_score    REAL DEFAULT 0.0,
-        anxiety_score REAL DEFAULT 0.0,
-        anger_score  REAL DEFAULT 0.0,
+        valence_score REAL DEFAULT 0.0,
+        arousal_score REAL DEFAULT 0.0,
         created_at   TEXT,
         FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
     )
@@ -91,20 +89,19 @@ def save_posts_to_db(df_posts, db_path=DB_FILE):
             created_str = created_str.strftime("%Y-%m-%d %H:%M:%S")
             
         cursor.execute("""
-        INSERT INTO posts (post_id, title, content, category, created_at, joy_score, anxiety_score, anger_score, like_count, comment_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO posts (post_id, title, content, category, created_at, valence_score, arousal_score, like_count, comment_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(post_id) DO UPDATE SET
             title=excluded.title,
             content=excluded.content,
             category=excluded.category,
             like_count=excluded.like_count,
             comment_count=excluded.comment_count,
-            joy_score=excluded.joy_score,
-            anxiety_score=excluded.anxiety_score,
-            anger_score=excluded.anger_score
+            valence_score=excluded.valence_score,
+            arousal_score=excluded.arousal_score
         """, (
             row["post_id"], row["title"], row["content"], row["category"], created_str,
-            row["joy_score"], row["anxiety_score"], row["anger_score"], row["like_count"], row["comment_count"]
+            row["valence_score"], row["arousal_score"], row["like_count"], row["comment_count"]
         ))
         
         # 2. 寫入或更新該貼文的關鍵字
@@ -119,18 +116,17 @@ def save_posts_to_db(df_posts, db_path=DB_FILE):
                 
     conn.commit()
     
-    # 3. 重新計算並更新 daily_summary 資料表
+    # 3. 重新計算並更新 daily_summary 資料表 (Valence-Arousal 版)
     cursor.execute("""
     DELETE FROM daily_summary
     """)
     
     cursor.execute("""
-    INSERT INTO daily_summary (date, avg_joy, avg_anxiety, avg_anger, total_posts)
+    INSERT INTO daily_summary (date, avg_valence, avg_arousal, total_posts)
     SELECT 
         strftime('%Y-%m-%d', created_at) as post_date,
-        round(avg(joy_score), 1) as avg_joy,
-        round(avg(anxiety_score), 1) as avg_anxiety,
-        round(avg(anger_score), 1) as avg_anger,
+        round(avg(valence_score), 1) as avg_valence,
+        round(avg(arousal_score), 1) as avg_arousal,
         count(*) as total_posts
     FROM posts
     GROUP BY post_date
@@ -171,7 +167,7 @@ def load_data_from_db(start_date, end_date, selected_categories, db_path=DB_FILE
     else:
         df_posts = pd.DataFrame(columns=[
             "post_id", "title", "content", "category", "created_at",
-            "joy_score", "anxiety_score", "anger_score", "like_count", "comment_count", "keywords"
+            "valence_score", "arousal_score", "like_count", "comment_count", "keywords"
         ])
         
     # 為每篇貼文掛載 keywords
@@ -185,15 +181,12 @@ def load_data_from_db(start_date, end_date, selected_categories, db_path=DB_FILE
         
     df_posts["keywords"] = df_posts["post_id"].map(lambda pid: post_keywords.get(pid, []))
     
-    # 讀取符合篩選時間的 daily_summary 趨勢資料
-    # 注意：趨勢圖應代表所選主題在該段期間的每日平均情绪，還是所有貼文的每日情緒？
-    # 為了跟前台的 category 連動，這部應重新用 SQL 依據當前選定的類別重新計算，比直接讀 summary 更能動態過濾！
+    # 讀取符合篩選時間的 daily_summary 趨勢資料 (Valence-Arousal 版)
     summary_query = f"""
     SELECT 
         strftime('%Y-%m-%d', created_at) as date_str,
-        round(avg(joy_score), 1) as avg_joy,
-        round(avg(anxiety_score), 1) as avg_anxiety,
-        round(avg(anger_score), 1) as avg_anger,
+        round(avg(valence_score), 1) as avg_valence,
+        round(avg(arousal_score), 1) as avg_arousal,
         count(*) as total_posts
     FROM posts
     WHERE created_at >= ? AND created_at <= ? AND {categories_cond}
@@ -204,7 +197,7 @@ def load_data_from_db(start_date, end_date, selected_categories, db_path=DB_FILE
     if not df_daily.empty:
         df_daily["date"] = pd.to_datetime(df_daily["date_str"]).dt.date
     else:
-        df_daily = pd.DataFrame(columns=["date", "avg_joy", "avg_anxiety", "avg_anger", "total_posts"])
+        df_daily = pd.DataFrame(columns=["date", "avg_valence", "avg_arousal", "total_posts"])
         
     conn.close()
     return df_posts, df_daily
@@ -213,7 +206,7 @@ def save_comments_to_db(comments_list, db_path=DB_FILE):
     """
     將留言清單存入 comments 資料表。
     comments_list: List[dict]，每個 dict 包含:
-        comment_id, post_id, content, floor, joy_score, anxiety_score, anger_score, created_at
+        comment_id, post_id, content, floor, valence_score, arousal_score, created_at
     """
     if not comments_list:
         return 0
@@ -224,21 +217,19 @@ def save_comments_to_db(comments_list, db_path=DB_FILE):
         try:
             cursor.execute("""
             INSERT INTO comments
-                (comment_id, post_id, content, floor, joy_score, anxiety_score, anger_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (comment_id, post_id, content, floor, valence_score, arousal_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(comment_id) DO UPDATE SET
                 content=excluded.content,
-                joy_score=excluded.joy_score,
-                anxiety_score=excluded.anxiety_score,
-                anger_score=excluded.anger_score
+                valence_score=excluded.valence_score,
+                arousal_score=excluded.arousal_score
             """, (
                 str(c.get("comment_id", "")),
                 str(c.get("post_id", "")),
                 c.get("content", ""),
                 c.get("floor", 0),
-                float(c.get("joy_score", 0.0)),
-                float(c.get("anxiety_score", 0.0)),
-                float(c.get("anger_score", 0.0)),
+                float(c.get("valence_score", 0.0)),
+                float(c.get("arousal_score", 0.0)),
                 c.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             ))
             saved += 1
@@ -279,9 +270,9 @@ def load_comments_from_db(post_id=None, limit=200, db_path=DB_FILE):
 
 def get_comment_sentiment_summary(db_path=DB_FILE):
     """
-    取得各篇貼文的留言情緒聚合統計，用於儀表板圖表。
+    取得各篇貼文的留言情緒聚合統計，用於儀表板圖表 (Valence-Arousal 版)。
     回傳 DataFrame：post_id, post_title, comment_count,
-                    avg_joy, avg_anxiety, avg_anger
+                    avg_valence, avg_arousal
     """
     conn = get_connection(db_path)
     query = """
@@ -289,9 +280,8 @@ def get_comment_sentiment_summary(db_path=DB_FILE):
         c.post_id,
         p.title AS post_title,
         COUNT(*)          AS comment_count,
-        ROUND(AVG(c.joy_score), 1)      AS avg_joy,
-        ROUND(AVG(c.anxiety_score), 1)  AS avg_anxiety,
-        ROUND(AVG(c.anger_score), 1)    AS avg_anger
+        ROUND(AVG(c.valence_score), 1)  AS avg_valence,
+        ROUND(AVG(c.arousal_score), 1)  AS avg_arousal
     FROM comments c
     LEFT JOIN posts p ON c.post_id = p.post_id
     GROUP BY c.post_id
