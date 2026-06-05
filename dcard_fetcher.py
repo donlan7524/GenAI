@@ -54,7 +54,10 @@ def start_browser_env():
     elif current_env == 'darwin':
         print("[Pipeline-Core] 🪐 偵測環境：【macOS】-> 正在調用 Unix 核心拉起應用程式 Chrome...")
         # macOS 標準安裝路徑與獨立沙盒環境配置
-        mac_chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        # 💡 因為本機沒有 Google Chrome，這裡動態使用 Playwright 下載的 Chromium
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            mac_chrome = p.chromium.executable_path
         user_data_dir = os.path.expanduser("~/Library/Application Support/Google/Chrome_Dev_Profile")
         mac_cmd = f'"{mac_chrome}" {chrome_args} --user-data-dir="{user_data_dir}" &'
         subprocess.Popen(mac_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
