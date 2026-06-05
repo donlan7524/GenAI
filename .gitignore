@@ -37,6 +37,10 @@ config.json
 Thumbs.db
 desktop.ini
 
-# === 暫存檔 ===
+# === 暫存檔與生成資料 ===
 *.log
 scratch_*.py
+test.json
+filtered_trees.json
+scraped_data.txt
+*dataset.jsonl

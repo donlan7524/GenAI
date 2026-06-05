@@ -932,15 +932,15 @@ try:
             
         df_va["象限"] = df_va.apply(get_quadrant, axis=1)
         
+        # 建立高質感的互動象限散點圖
         fig_va = px.scatter(
             df_va,
             x="valence_score",
             y="arousal_score",
             color="category",
             size=df_va["like_count"].apply(lambda x: max(10, min(x + 10, 50))),
-            text="short_title",
             hover_name="title",
-            custom_data=df_va[["like_count", "comment_count", "象限"]],
+            custom_data=df_va[["like_count", "comment_count", "象限", "short_title"]],
             labels={
                 "valence_score": "情緒效價 (Valence - 負向極端至正向極端)",
                 "arousal_score": "情緒喚起 (Arousal - 平靜冷靜至高亢激動)",
@@ -948,19 +948,26 @@ try:
             }
         )
         
+        # 🟢 優化 1：貼文標題改為僅在鼠標懸停時顯示，並啟用動態聚焦效果 (Hover Focus & Dim)
+        # 設定 hovermode 為 closest，並用 customdata[3] 來顯示標題
         fig_va.update_traces(
-            hovertemplate="<b>%{hovertext}</b><br>討論主題: %{legendgroup}<br>情緒效價: %{x:+.1f}<br>情緒喚起: %{y:+.1f}<br>象限歸屬: %{customdata[2]}<br>讚數: %{customdata[0]}<br>留言數: %{customdata[1]}<extra></extra>",
-            textposition="top center",
-            textfont_size=9
+            hovertemplate="<b>%{customdata[3]}</b><br>討論主題: %{legendgroup}<br>情緒效價: %{x:+.1f}<br>情緒喚起: %{y:+.1f}<br>象限歸屬: %{customdata[2]}<br>讚數: %{customdata[0]}<br>留言數: %{customdata[1]}<extra></extra>",
+            marker=dict(
+                line=dict(width=1, color="DarkSlateGrey")
+            ),
+            unselected=dict(marker=dict(opacity=0.15)), # 當有選取動作時其他節點透明化
+            selected=dict(marker=dict(opacity=1.0))
         )
         
+        # 畫十字象限中軸線
         fig_va.add_shape(type="line", x0=-105, y0=0, x1=105, y1=0, line=dict(color="#E2E8F0", width=1.5, dash="dash"))
         fig_va.add_shape(type="line", x0=0, y0=-105, x1=0, y1=105, line=dict(color="#E2E8F0", width=1.5, dash="dash"))
         
-        fig_va.add_annotation(x=70, y=85, text="<b>第一象限：積極興奮 🚀</b>", showarrow=False, font=dict(color="#10B981", size=11))
-        fig_va.add_annotation(x=-70, y=85, text="<b>第二象限：焦慮憤怒 🌋</b>", showarrow=False, font=dict(color="#EF4444", size=11))
-        fig_va.add_annotation(x=-70, y=-85, text="<b>第三象限：沮喪消極 ❄️</b>", showarrow=False, font=dict(color="#64748B", size=11))
-        fig_va.add_annotation(x=70, y=-85, text="<b>第四象限：平靜放鬆 🌊</b>", showarrow=False, font=dict(color="#3B82F6", size=11))
+        # 🟢 優化 2：將四個象限的文字推到座標軸的最外圍邊界，並調小、套用半透明度，避免遮擋散點
+        fig_va.add_annotation(x=95, y=98, text="<b>第一象限：積極興奮 🚀</b>", showarrow=False, font=dict(color="rgba(16, 185, 129, 0.45)", size=10), xanchor="right", yanchor="top")
+        fig_va.add_annotation(x=-95, y=98, text="<b>第二象限：焦慮憤怒 🌋</b>", showarrow=False, font=dict(color="rgba(239, 68, 68, 0.45)", size=10), xanchor="left", yanchor="top")
+        fig_va.add_annotation(x=-95, y=-98, text="<b>第三象限：沮喪消極 ❄️</b>", showarrow=False, font=dict(color="rgba(100, 116, 139, 0.45)", size=10), xanchor="left", yanchor="bottom")
+        fig_va.add_annotation(x=95, y=-98, text="<b>第四象限：平靜放鬆 🌊</b>", showarrow=False, font=dict(color="rgba(59, 130, 246, 0.45)", size=10), xanchor="right", yanchor="bottom")
         
         fig_va.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
@@ -969,8 +976,28 @@ try:
             margin=dict(l=40, r=40, t=10, b=40),
             xaxis=dict(range=[-105, 105], showgrid=True, gridcolor='#F1F5F9', linecolor='#E2E8F0'),
             yaxis=dict(range=[-105, 105], showgrid=True, gridcolor='#F1F5F9', linecolor='#E2E8F0'),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            # 🟢 優化 3：啟用 hover 聚焦與淡化其他節點的功能 (透過 Plotly layout hovermode 最優化)
+            hovermode="closest",
+            clickmode="event+select" # 支援點擊聚焦，或懸停反饋
         )
+        
+        # 🟢 優化 4：注入一個輕量級的 CSS 規則，使鼠標懸停時，Plotly 散點圖中未懸停的點自動套用 CSS transition 與 opacity 淡出效果
+        st.markdown("""
+        <style>
+            /* 讓 Plotly 散點在懸停時，其他未被懸停的點透明度變低 */
+            .js-plotly-plot .plotly .scatterlayer .trace:hover .point {
+                opacity: 0.15 !important;
+                transition: opacity 0.2s ease-in-out;
+            }
+            .js-plotly-plot .plotly .scatterlayer .trace .point:hover {
+                opacity: 1.0 !important;
+                stroke: #0F2C59 !important;
+                stroke-width: 2px !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
         st.plotly_chart(fig_va, use_container_width=True)
     else:
         st.info("💡 當前無資料可繪製分佈圖。")

@@ -1,11 +1,13 @@
-# 國立中山大學社群輿情與情緒起伏儀表板 (Dcard Sentiment Dashboard)
+# AI generated
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
 [![SQLite](https://img.shields.io/badge/SQLite-資料庫-003B57?logo=sqlite&logoColor=white)](https://sqlite.org)
+[![Playwright](https://img.shields.io/badge/Playwright-自動化採集-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev)
+[![FastAPI](https://img.shields.io/badge/FastAPI-本地API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License](https://img.shields.io/badge/用途-學術展示-brightgreen)](/)
 
-本專案為針對國立中山大學 Dcard 校版開發的學術輿情分析儀表板。系統由離散情緒分類全面升級為學術界廣泛認可的 **Valence-Arousal (VA) 二維情緒維度模型**，提供精緻的 HSL 視覺化、2D 象限平面分布圖、情緒百分比分佈條，以及繞過 Cloudflare 防護的瀏覽器書籤採集器。
+📚 **為了協助您快速上手，專案中已製作了一份完整且詳細的使用教學指南，請直接閱讀：[PROJECT_GUIDE.md](file:///c:/Users/Diego/Downloads/AI_project/PROJECT_GUIDE.md)**
 
 ---
 
@@ -13,13 +15,16 @@
 
 1. [專案背景](#-專案背景)
 2. [功能總覽](#-功能總覽)
-3. [系統架構](#-系統架構)
+3. [專案結構與文件導覽](#-專案結構與文件導覽)
 4. [NLP 情緒分析引擎與情感模型](#-nlp-情緒分析引擎與情感模型)
-5. [資料庫設計](#-資料庫設計)
-6. [書籤採集工具](#-書籤採集工具)
-7. [安裝與執行](#-安裝與執行)
-8. [使用流程](#-使用流程)
-9. [隱私與安全說明](#-隱私與安全說明)
+5. [資料庫設計與防重疊機制](#-資料庫設計與防重疊機制)
+6. [自動化 CDP 採集流水線](#-自動化-cdp-採集流水線)
+7. [知識蒸餾與資料集準備](#-知識蒸餾與資料集準備)
+8. [大語言模型 QLoRA 微調與 FastAPI 部署](#-大語言模型-qlora-微調與-fastapi-部署)
+9. [中山 AI 網友社群模擬沙盒](#-中山-ai-網友社群模擬沙盒)
+10. [資料庫重設工具](#-資料庫重設工具)
+11. [安裝與執行](#-安裝與執行)
+12. [隱私與安全說明](#-隱私與安全說明)
 
 ---
 
@@ -28,67 +33,48 @@
 本專案為學術用途的 **概念驗證（Proof of Concept）** 系統，旨在探索：
 - 中山大學學生在 Dcard 上的主要情緒分佈為何？
 - 貼文標題與內文所傳遞的情緒好惡，與留言回應的情緒表現是否存在落差或共鳴？
+- 我們能否使用真實的論壇數據，知識蒸餾並微調出具備「中山大學學生特徵與性格」的 AI 網友進行社群互動模擬？
 
 ---
 
 ## ✨ 功能總覽
 
-### 📊 儀表板主頁
+### 📊 1. 輿情分析主儀表板
+* **情緒分佈與趨勢**：展示正向/負向偏向（Valence）以及冷靜/激動強度（Arousal）的百分比佔比與時間折線波動。
+* **2D 輿情象限平面圖**：將貼文定位在「好惡效價」與「喚起度」二維象限中，點的尺寸與按讚數呈正相關。
+* **最新留言列表**：顯示最近採集的留言，附帶百分比化的 NLP 情緒標記（如 `🟢 正向 52.0%` / `🔵 冷靜 51.6%`）。
 
-| 功能區塊 | 說明 |
-|----------|------|
-| **整體情緒指標卡** | 今日校園氛圍綜合判定（積極興奮 🚀 / 焦慮憤怒 🌋 / 沮喪無奈 ❄️ / 放鬆愜意 🌊） |
-| **情緒分佈比例條** | 直觀展示當前篩選數據中，正向/負向偏向（Valence）以及冷靜/激動強度（Arousal）的百分比佔比 |
-| **情緒起伏趨勢圖** | 繪製雙折線圖，展示情緒效價（Valence）與情緒喚起（Arousal）隨時間的起伏波動 |
-| **2D 輿情象限平面圖** | 以散點圖將貼文標定位在四個情緒象限中，點的尺寸與按讚數呈正相關，支援 Hover 懸停互動 |
-| **熱門關鍵字詞雲** | 以 TF-IDF 提取的高頻特徵詞彙雲圖 |
+### 🎮 2. 中山 AI 網友互動沙盒
+* **歷史資料回放測試**：載入真實貼文，指派不同性格的 AI 網友針對該文發表留言。
+* **自主模擬沙盒**：AI 發文 Agent 自動發表貼文，多位不同性格的 AI 留言 Agent 在下方自動進行 @樓層 留言與多輪交鋒。
+* **人機大戰互動**：使用者可以親自在虛擬看板發文或留下「真人留言」，將會立刻觸發 AI 網友對您進行 @回覆。
 
-### 💬 留言情緒深度分析
-
-| 功能 | 說明 |
-|------|------|
-| **留言平均情緒指標** | 留言數、留言平均效價、平均喚起強度與留言主要氛圍指標卡 |
-| **留言情緒分佈比例條** | 展示所有已採集留言中，正/負向及冷靜/激動的百分比比例 |
-| **各貼文留言分佈圖** | 以分組條型圖對比呈現各貼文留言的平均效價與平均喚起度 |
-| **貼文 vs 留言對比圖** | 橫軸為貼文效價，縱軸為留言平均效價，落點偏離對角線代表作者與讀者情緒有落差 |
-| **最新留言列表** | 顯示最近採集的留言，附帶百分比化的 NLP 情緒標記（如 `🟢 正向 52.0%` / `🔵 冷靜 51.6%`） |
-
-### 🔍 貼文下鑽搜尋
-
-- 依 **主題分類**（課業 / 感情 / 校務 / 生活）篩選
-- 依 **日期範圍** 篩選（可分析期中考週、選課週等特定時期）
-- **全文關鍵字搜尋**（如「猴子」、「停水」、「選課」）
-- 支援依 **時間、按讚數、喚起激動度、負向度** 等維度進行排序
-- 真實貼文卡片附有直連 Dcard 原文連結 🔗
+### 🎓 3. 學術量化評估
+* **TTR 詞彙多樣性**：計算 AI 生成的相異詞比率，評估其語言多樣性。
+* **語氣餘弦相似度**：利用 TF-IDF 向量比較 AI 留言語料與真實 Dcard 人類語料在用詞習慣上的相似融入程度。
 
 ---
 
-## 🏗️ 系統架構
+## 📂 專案結構與文件導覽
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     瀏覽器（使用者端）                       │
-│  ┌──────────────┐          ┌───────────────────────────────┐ │
-│  │  Dcard 網站  │          │  Streamlit 儀表板             │ │
-│  │  (書籤執行)  │          │  app.py                       │ │
-│  └──────┬───────┘          └────────────┬──────────────────┘ │
-│         │ HTTP POST                      │                    │
-│         │ (JSON)                         │ 讀取/渲染           │
-└─────────┼────────────────────────────────┼────────────────────┘
-          │                                │
-          ▼                                ▼
-   ┌──────────────┐              ┌──────────────────┐
-   │ HTTPServer   │              │  SQLite 資料庫    │
-   │ Port 8002    │──寫入──────▶│  nsysu_輿情.db   │
-   │ (背景執行緒) │              │                  │
-   └──────┬───────┘              │  - posts         │
-          │                      │  - comments      │
-          │ 呼叫                 │  - keywords      │
-          ▼                      │  - daily_summary │
-   ┌──────────────┐              └──────────────────┘
-   │  scraper.py  │
-   │  (解析JSON)  │──呼叫──▶  nlp_engine.py
-   └──────────────┘           (情緒分析 + 關鍵字)
+本專案的關鍵檔案配置如下：
+
+```text
+c:/Users/Diego/Downloads/AI_project/
+├── app.py                      # Streamlit 儀表板主入口程式
+├── pages/
+├── dcard_fetcher.py            # Playwright Chrome CDP 自動化爬蟲 (隨機防封鎖延遲)
+├── HTMLdealer.py               # 數據庫同步與 CSV 寫入工具
+├── data_processor.py           # 知識蒸餾管線 (對話樹重建 + NumPy MLP 雜訊過濾)
+├── train_lora.py               # QLoRA 4-bit 微調訓練腳本 (支援 Colab T4)
+├── serve_model.py              # FastAPI OpenAI 相容本地模型 API 伺服器
+├── evaluator.py                # TTR 豐富度與風格 Cosine 相似度評估工具
+├── clean_db.py                 # SQLite 資料庫安全清空與壓縮工具
+├── nlp_engine.py               # 2D 情感分析引擎與關鍵字詞雲生成
+├── db_manager.py               # 本地 SQLite 資料庫讀寫介面
+├── nsysu_舆情.db                # 本地 SQLite 資料庫 (儲存爬蟲與模擬數據)
+├── PROJECT_GUIDE.md            # 本專案一站式完整使用指南 (繁中)
+└── README.md                   # 專案介紹說明書 (本文件)
 ```
 
 ---
@@ -98,122 +84,80 @@
 系統使用離線、規則式的多維情感字典與繁體中文斷詞引擎。
 
 ### 1. 2D Valence-Arousal 情感模型
-我們棄用簡單的二元正負情緒或不具空間連續性的離散模型，升級為學術界通用的二維維度模型：
-*   **情緒效價 (Valence, 情緒好惡)**：範圍 $[-100.0, 100.0]$。正值代表正向偏向（喜悅、滿意、放鬆），負值代表負向偏向（焦慮、憤怒、沮喪）。
-*   **情緒喚起度 (Arousal, 生理激動度)**：範圍 $[-100.0, 100.0]$。正值代表高生理喚起（激動、緊張、亢奮），負值代表低生理喚起（冷靜、放鬆、消極）。
+*   **情緒效價 (Valence, 情緒好惡)**：範圍 $[-100.0, 100.0]$。正值代表正向（喜悅、放鬆），負值代表負向（焦慮、沮喪）。
+*   **情緒喚起度 (Arousal, 生理激動度)**：範圍 $[-100.0, 100.0]$。正值代表高生理喚起（激動、緊張），負值代表低生理喚起（冷靜、消極）。
 
 ### 2. 百分比轉換公式
-為了讓使用者能直觀感受單篇貼文的情感強度，系統將 $[-100.0, 100.0]$ 的原始分數透過以下公式映射為 $[0\%, 100\%]$ 的分佈百分比：
+將 $[-100.0, 100.0]$ 的分數透過以下公式映射為 $[0\%, 100\%]$ 的分佈百分比：
 $$\text{百分比} = 50.0\% + \frac{\text{原始分數}}{2.0}$$
-*   若 $\text{Valence} \ge 0$，顯示 `🟢 正向 P%`；若 $< 0$，顯示 `🔴 負向 P%`。
-*   若 $\text{Arousal} \ge 0$，顯示 `🟠 激動 P%`；若 $< 0$，顯示 `🔵 冷靜 P%`。
-
-### 3. 校園特定特徵詞彙
-結合 [Jieba](https://github.com/fxsjy/jieba) 斷詞，系統登錄了中山大學特有詞彙（如「柴山獼猴」、「選課系統」、「停水」），並針對特定校園事件註冊了專屬的情感權重向量偏移（Bias），例如：
-*   「停水」、「宿網斷線」：極高負效價、高喚起（焦慮憤怒）
-*   「選課當機」：高負效價、高喚起（焦慮）
-*   「西子灣看夕陽」：高正效價、低喚起（平靜放鬆）
 
 ---
 
-## 🗄️ 資料庫設計
+## 🗄️ 資料庫設計與防重疊機制
 
-資料庫採用 SQLite（`nsysu_輿情.db`），包含以下結構：
+資料庫採用 SQLite（`nsysu_舆情.db`），包含貼文主表 `posts`、留言表 `comments`、虛擬看板表 `virtual_posts` 與虛擬留言表 `virtual_comments`。
 
-```sql
--- 貼文主表
-CREATE TABLE posts (
-    post_id       TEXT PRIMARY KEY,  -- Dcard 文章 ID（真實貼文為純數字，模擬為 M_ 開頭）
-    title         TEXT,
-    content       TEXT,
-    category      TEXT,              -- 課業 / 感情 / 校務 / 生活
-    created_at    TEXT,
-    valence_score REAL DEFAULT 0.0,  -- 效價分數 [-100.0, 100.0]
-    arousal_score REAL DEFAULT 0.0,  -- 喚起度分數 [-100.0, 100.0]
-    like_count    INTEGER,
-    comment_count INTEGER
-);
-
--- 關鍵字表
-CREATE TABLE keywords (
-    post_id TEXT,
-    word    TEXT,
-    weight  REAL,
-    PRIMARY KEY (post_id, word),
-    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
-);
-
--- 留言表
-CREATE TABLE comments (
-    comment_id    TEXT PRIMARY KEY,
-    post_id       TEXT NOT NULL,
-    content       TEXT,
-    floor         INTEGER,
-    valence_score REAL DEFAULT 0.0,
-    arousal_score REAL DEFAULT 0.0,
-    created_at    TEXT,
-    FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE CASCADE
-);
-
--- 每日統計快取表
-CREATE TABLE daily_summary (
-    date        TEXT PRIMARY KEY,
-    avg_valence REAL DEFAULT 0.0,
-    avg_arousal REAL DEFAULT 0.0,
-    total_posts INTEGER
-);
-```
+### 🔄 冪等性防重複寫入機制 (Idempotency)
+若您**重複執行**爬蟲與解析腳本，系統**不會**造成資料庫混亂。
+*   系統採用了 SQLite 的 `ON CONFLICT(post_id) DO UPDATE` 語意。
+*   若資料庫中已經存在相同 ID 的貼文或留言，系統會自動使用最新抓取到的按讚數、留言數與情感分數進行**欄位更新**，而不會插入重複的資料，確保數據庫潔淨與時效性。
 
 ---
 
-## ⚡ 書籤採集工具
+## 🌳 知識蒸餾與資料集準備
 
-為繞過 Dcard 對自動化爬蟲的 Cloudflare WAF 阻擋，系統採用**同源 JavaScript 瀏覽器書籤**採集資料：
-
-1.  **書籤 A（大量貼文採集）**：前往 Dcard 中山大學版面點擊，腳本將呼叫 Dcard 原生相對路徑 API `/_api/forums/{forumName}/posts` 並帶上標頭 `'x-client-type': 'web'` 來模擬官方前端載入。
-2.  **書籤 B（單篇留言採集）**：前往單篇 Dcard 貼文頁面點擊，呼叫相對路徑 API `/_api/posts/{postId}/comments` 下載該文所有留言。
-3.  **資料同步**：書籤採集到的資料會被發送至本地後端伺服器（Port 8002），透過 NLP 引擎分析後安全寫入 SQLite 資料庫中。
-
----
-
-## 🚀 安裝與執行
-
-### 1. 安裝相依套件
-請於終端機執行：
-```bash
-pip install streamlit pandas plotly jieba wordcloud curl_cffi
-```
-
-### 2. 啟動儀表板
-```bash
-streamlit run app.py
-```
-執行後瀏覽器將自動開啟 `http://localhost:8501`。後台接收伺服器會在背景啟動並監聽 `http://127.0.0.1:8002`，系統會在 Streamlit 重載時自動釋放並重啟埠口，防止執行緒衝突。
+[data_processor.py](file:///c:/Users/Diego/Downloads/AI_project/data_processor.py) 提供將論壇非結構化數據提煉為 LLM 微調數據的資料工程管線：
+*   **樹狀重建**：解析內容中的 `@B[0-9]+`，將扁平列表還原為多叉對話樹。
+*   **MLP 過濾器**：採用純 NumPy 實作單隱藏層多層感知器，過濾短詞與無意義詞。
+*   **數據導出**：產生發文者 `poster_dataset.jsonl` 與留言者 `commenter_dataset.jsonl`。
 
 ---
 
-## 📋 使用流程
+## 🧠 大語言模型 QLoRA 微調與 FastAPI 部署
 
-```
- 執行 streamlit run app.py 啟動系統
- │
- ├─ 1. 在儀表板側邊欄「⚡ Dcard 書籤工具」區塊中：
- │      ├─ 複製「書籤 A」代碼，建立瀏覽器書籤（命名：Dcard 大量採集）
- │      └─ 複製「書籤 B」代碼，建立瀏覽器書籤（命名：Dcard 留言採集）
- │
- ├─ 2. 在瀏覽器中開啟 Dcard 中山大學看板 (https://www.dcard.tw/f/nsysu)
- │      └─ 點擊瀏覽器中的「Dcard 大量採集」書籤 
- │             → 等待數秒出現「🎉 同步成功」提示後，切回儀表板重整頁面 (F5)
- │
- └─ 3. 點擊儀表板中任一篇真實貼文連結 🔗 開啟 Dcard 原文頁面
-        └─ 待留言載入完成後，點擊「Dcard 留言採集」書籤
-               → 看到「💬 留言同步成功」後即可在儀表板底部看到該文的留言情緒對比分析！
-```
+為了微調出具備中山特徵的 AI 網友：
+*   **微調腳本**：[train_lora.py](file:///c:/Users/Diego/Downloads/AI_project/train_lora.py) 使用 QLoRA 4-bit 量化與 SFTTrainer 在 GPU 上進行高效微調（支援 Google Colab T4 執行）。
+*   **API 部署**：[serve_model.py](file:///c:/Users/Diego/Downloads/AI_project/serve_model.py) 採用 FastAPI 連接微調好的 LoRA Adapter 並啟動本地端伺服器（Port 8000），提供完全相容 OpenAI Chat Completion 格式的接口。
+
+---
+
+## 🎮 中山 AI 網友社群模擬沙盒
+
+程式位於 [pages/1_🤖_中山AI網友沙盒.py](file:///c:/Users/Diego/Downloads/AI_project/pages/1_%F0%9F%A4%96_%E4%B8%AD%E5%B1%B1AI%E7%B6%B2%E5%8F%8B%E6%B2%99%E7%9B%92.py)，提供：
+*   **多樣性格**：酸民嘴砲（愛反諷）、理智學霸（務實理性）、搞笑迷因（獼猴話題）、熱心溫和（溫柔鼓勵）。
+*   **對話樹模擬**：使用 Streamlit `st.chat_message` 完美呈現多層留言樹。
+*   **雙連線模式**：支援填入本地 API 啟用您微調的 LoRA 模型，若未啟用則自動退回高質感的「本地校園規則範本模式」進行離線測試。
+
+---
+
+## 🚀 安裝與快速執行
+
+1. **安裝相依套件**：
+   ```bash
+   pip install streamlit pandas plotly jieba wordcloud curl_cffi playwright fastapi uvicorn torch transformers peft accelerate datasets bitsandbytes
+   playwright install chromium
+   ```
+2. **啟動除錯模式 Chrome (防封鎖)**：
+   ```powershell
+   & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome_dev_profile" --no-first-run
+   ```
+3. **執行採集與解析**：
+   ```bash
+   python dcard_fetcher.py
+   python HTMLdealer.py
+   ```
+4. **啟動 Web 儀表板與沙盒**：
+   ```bash
+   streamlit run app.py
+   ```
+   *啟動後在側邊欄切換至 `1_🤖_中山AI網友沙盒` 頁面即可體驗！*
 
 ---
 
 ## 🛡️ 隱私與安全說明
 
-1.  **本地運作**：所有資料皆儲存於本地 SQLite，情感引擎採用離線計算，無外部雲端資料洩漏風險。
-2.  **安全設定**：敏感設定檔 `config.json` 與資料庫檔案已寫入 `.gitignore`，確保不會意外推播至公開儲存庫。
-3.  **本機伺服器熱重載保護**：背景 HTTPServer 引入了執行緒生命週期追蹤，重啟服務時會先安全釋放舊埠口，保證代碼熱更新正常執行。
+1. **本地安全**：本機 SQLite 資料庫已加入 `.gitignore`，確保您抓取的數據與個人 Cookie 資訊（位於 `config.json`）不會推送到公開的 GitHub 倉庫中。其他使用者 clone 專案後，會在他們本地重新建立自己專屬的資料庫。
+2. **防封鎖安全延遲**：爬蟲已加入隨機間隔，模擬真人閱讀行為，大幅降低 IP 被封鎖的風險。
+
+---
+📝 **詳細的實作細節與模型訓練指南，請即刻閱讀：[PROJECT_GUIDE.md](file:///c:/Users/Diego/Downloads/AI_project/PROJECT_GUIDE.md)**
