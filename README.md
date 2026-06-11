@@ -123,7 +123,7 @@ $$\text{百分比} = 50.0\% + \frac{\text{原始分數}}{2.0}$$
 
 ## 🎮 中山 AI 網友社群模擬沙盒
 
-程式位於 [pages/1_🤖_中山AI網友沙盒.py](file:///c:/Users/Diego/Downloads/AI_project/pages/1_%F0%9F%A4%96_%E4%B8%AD%E5%B1%B1AI%E7%B6%B2%E5%8F%8B%E6%B2%99%E7%9B%92.py)，提供：
+程式位於 [pages/1_中山AI網友沙盒.py](file:///c:/Users/Diego/Downloads/AI_project/pages/1_%E4%B8%AD%E5%B1%B1AI%E7%B6%B2%E5%8F%8B%E6%B2%99%E7%9B%92.py)，提供：
 *   **多樣性格**：酸民嘴砲（愛反諷）、理智學霸（務實理性）、搞笑迷因（獼猴話題）、熱心溫和（溫柔鼓勵）。
 *   **對話樹模擬**：使用 Streamlit `st.chat_message` 完美呈現多層留言樹。
 *   **雙連線模式**：支援填入本地 API 啟用您微調的 LoRA 模型，若未啟用則自動退回高質感的「本地校園規則範本模式」進行離線測試。
@@ -150,7 +150,7 @@ $$\text{百分比} = 50.0\% + \frac{\text{原始分數}}{2.0}$$
    ```bash
    streamlit run app.py
    ```
-   *啟動後在側邊欄切換至 `1_🤖_中山AI網友沙盒` 頁面即可體驗！*
+   *啟動後在側邊欄切換至 `1_中山AI網友沙盒` 頁面即可體驗！*
 
 ---
 

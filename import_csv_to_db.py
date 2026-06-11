@@ -69,6 +69,7 @@ def import_csv():
             # NLP 情感分析與分類
             category = scraper.classify_category(title, content, topics=[])
             valence, arousal = nlp_engine.analyze_sentiment(title, content)
+            nlp_engine.propagate_sentiment_to_keywords(title, content, valence, arousal, cursor=cursor)
             keywords = nlp_engine.extract_keywords(title, content, limit=5)
             
             # 寫入 posts 表

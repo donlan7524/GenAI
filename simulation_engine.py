@@ -173,12 +173,14 @@ class LLMDriver:
     雙模式 LLM 驅動器：支援真實 API 呼叫與基於規則/範本的本地 Fallback
     """
     def __init__(self, api_key=None, base_url=None, model_name=None):
-        self.api_key = api_key if api_key else os.environ.get("OPENAI_API_KEY", None)
+        self.api_key = api_key if api_key else os.environ.get("OPENAI_API_KEY", "")
         self.base_url = (base_url if base_url else "https://api.openai.com/v1").rstrip("/")
         self.model_name = model_name if model_name else "gpt-4o-mini"
-        self.has_api = self.api_key is not None
+        
+        is_local = "127.0.0.1" in self.base_url or "localhost" in self.base_url
+        self.has_api = (self.api_key != "" and self.api_key is not None) or is_local
 
-    def generate(self, system_prompt, user_prompt, fallback_data=None, model_override=None):
+    def generate(self, system_prompt, user_prompt, fallback_data=None, model_override=None, status_callback=None):
         if self.has_api:
             try:
                 import requests
@@ -190,6 +192,10 @@ class LLMDriver:
                 if model_override:
                     if "127.0.0.1" in self.base_url or "localhost" in self.base_url or self.model_name.lower().startswith("nsysu"):
                         model_to_use = model_override
+                
+                if status_callback:
+                    status_callback(f"📡 正在向 API 伺服器發送請求... (模型: `{model_to_use}`)")
+                    
                 payload = {
                     "model": model_to_use,
                     "messages": [
@@ -198,15 +204,28 @@ class LLMDriver:
                     ],
                     "temperature": 0.7
                 }
+                
+                import time
+                start_time = time.time()
                 res = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=payload, timeout=8000)
+                elapsed = time.time() - start_time
+                
                 if res.status_code == 200:
+                    if status_callback:
+                        status_callback(f"📥 API 回傳成功！(HTTP 200 OK，耗時 {elapsed:.1f} 秒)，正在解析生成內容...")
                     result = res.json()
                     return result["choices"][0]["message"]["content"].strip()
                 else:
+                    if status_callback:
+                        status_callback(f"⚠️ API 伺服器回傳非預期狀態碼 ({res.status_code})，即將切換至本地模板 fallback...")
                     print(f"[LLM] API 回傳錯誤碼 {res.status_code}，切換至本地模板 fallback。")
             except Exception as e:
+                if status_callback:
+                    status_callback(f"❌ API 伺防器連線失敗 ({str(e)})，即將切換至本地模板 fallback...")
                 print(f"[LLM] API 呼叫失敗 ({e})，切換至本地模板 fallback。")
                 
+        if status_callback:
+            status_callback("🎲 已啟用本地規則引擎：根據滑桿性格設定，隨機加權抽樣留言詞庫與貼文範本...")
         return self._generate_fallback(system_prompt, user_prompt, fallback_data)
 
     def _generate_fallback(self, system_prompt, user_prompt, fallback_data):
@@ -307,7 +326,7 @@ class PosterAgent:
         self.persona = persona if persona else Persona()
         self.llm_driver = llm_driver if llm_driver else LLMDriver()
 
-    def generate_post(self, category):
+    def generate_post(self, category, status_callback=None):
         system_prompt = f"""
         {self.persona.get_style_text()}
         撰寫一篇在 Dcard 中山大學板上的發文。發文必須貼近真實的大學生語氣，並使用台灣繁體中文。
@@ -321,7 +340,7 @@ class PosterAgent:
             "category": category
         }
         
-        raw_res = self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-poster")
+        raw_res = self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-poster", status_callback=status_callback)
         try:
             cleaned_res = re.sub(r'```json\s*|\s*```', '', raw_res).strip()
             data = json.loads(cleaned_res)
@@ -329,7 +348,7 @@ class PosterAgent:
         except:
             return f"[閒聊] 關於{category}的一些想法", raw_res
 
-    def generate_reply(self, post_title, post_content, comment_history, reply_to_comment):
+    def generate_reply(self, post_title, post_content, comment_history, reply_to_comment, status_callback=None):
         system_prompt = f"""
         你是國立中山大學學生。你之前在 Dcard 發了這篇文：
         標題：{post_title}
@@ -348,7 +367,7 @@ class PosterAgent:
             "reply_to_floor": reply_to_comment.get("floor")
         }
         
-        return self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-poster")
+        return self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-poster", status_callback=status_callback)
 
 
 class CommenterAgent:
@@ -371,7 +390,7 @@ class CommenterAgent:
             return True
         return random.random() > 0.4
 
-    def generate_comment(self, post_title, post_content, comment_history, reply_to_floor=None):
+    def generate_comment(self, post_title, post_content, comment_history, reply_to_floor=None, status_callback=None):
         system_prompt = f"""
         {self.persona.get_style_text()}
         
@@ -392,7 +411,7 @@ class CommenterAgent:
             "reply_to_floor": reply_to_floor
         }
         
-        return self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-commenter")
+        return self.llm_driver.generate(system_prompt, user_prompt, fallback_data=fallback_data, model_override="nsysu-dcard-commenter", status_callback=status_callback)
 
 # ==========================================
 # 5. VirtualBoard (虛擬 Dcard 模擬看板引擎)
@@ -406,8 +425,8 @@ class VirtualBoard:
     def __init__(self, llm_driver=None):
         self.llm_driver = llm_driver if llm_driver else LLMDriver()
 
-    def create_new_post(self, poster_agent, category):
-        title, content = poster_agent.generate_post(category)
+    def create_new_post(self, poster_agent, category, status_callback=None):
+        title, content = poster_agent.generate_post(category, status_callback=status_callback)
         post_id = f"V_{int(datetime.now().timestamp() * 1000)}"
         author_name = poster_agent.persona.get_display_name()
         
@@ -460,7 +479,7 @@ class VirtualBoard:
         conn.close()
         print("[Notification] 🧹 已將所有通知設為已讀")
 
-    def post_comment(self, commenter_agent, post_id, reply_to_floor=None):
+    def post_comment(self, commenter_agent, post_id, reply_to_floor=None, status_callback=None):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         
@@ -475,7 +494,7 @@ class VirtualBoard:
         comments_history = [{"floor": r[0], "author": r[1], "content": r[2]} for r in cursor.fetchall()]
         
         next_floor = len(comments_history) + 1
-        content = commenter_agent.generate_comment(post_title, post_content, comments_history, reply_to_floor)
+        content = commenter_agent.generate_comment(post_title, post_content, comments_history, reply_to_floor, status_callback=status_callback)
         
         comment_id = f"VC_{post_id}_{next_floor}"
         author_name = commenter_agent.persona.get_display_name()
@@ -555,7 +574,7 @@ class VirtualBoard:
         conn.close()
         print("[VirtualBoard] 🧹 虛擬看板與所有通知已完全清空重設！")
 
-    def run_autonomous_simulation_step(self, num_commenters=3):
+    def run_autonomous_simulation_step(self, num_commenters=3, status_callback=None):
         # 隨機生成帶有隨機滑桿屬性的 Poster
         poster = PosterAgent(persona=Persona(
             rationality=random.random(),
@@ -564,7 +583,9 @@ class VirtualBoard:
         ), llm_driver=self.llm_driver)
         
         category = random.choice(["生活", "課業", "校務"])
-        post_id = self.create_new_post(poster, category)
+        if status_callback:
+            status_callback(f"📝 正在隨機指派一個發文者（原PO）撰寫分類為【{category}】的貼文...")
+        post_id = self.create_new_post(poster, category, status_callback=status_callback)
         
         # 隨機生成帶有隨機屬性的 Commenters
         commenters = [CommenterAgent(persona=Persona(
@@ -573,7 +594,7 @@ class VirtualBoard:
             humor=random.random()
         ), llm_driver=self.llm_driver) for _ in range(num_commenters)]
         
-        for commenter in commenters:
+        for idx, commenter in enumerate(commenters):
             post_details = self.get_post_details(post_id)
             if commenter.evaluate_interest(post_details["title"], post_details["content"], category):
                 reply_floor = None
@@ -581,7 +602,13 @@ class VirtualBoard:
                     target_c = random.choice(post_details["comments"])
                     reply_floor = target_c["floor"]
                 
-                self.post_comment(commenter, post_id, reply_to_floor=reply_floor)
+                if status_callback:
+                    dept = commenter.persona.department
+                    lbl = f"理{commenter.persona.rationality*100:.0f}%|嘴{commenter.persona.trolling*100:.0f}%|迷{commenter.persona.humor*100:.0f}%"
+                    dest = f"回覆 B{reply_floor}" if reply_floor else "直接留言"
+                    status_callback(f"💬 正在由留言者 (網友 {idx+1}/{num_commenters} 中山{dept}，性格: {lbl}) 生成{dest}...")
+                
+                self.post_comment(commenter, post_id, reply_to_floor=reply_floor, status_callback=status_callback)
                 
         return post_id
 

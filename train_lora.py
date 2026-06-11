@@ -17,7 +17,7 @@ from transformers import (
     TrainingArguments
 )
 from peft import LoraConfig, get_peft_model, TaskType
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 # 推薦基底模型（針對台灣繁體中文優化）
 BASE_MODEL = "MediaTek-Research/Breeze-7B-Instruct-v1_0" 
@@ -58,7 +58,7 @@ def train():
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16
+        bnb_4bit_compute_dtype=torch.bfloat16
     )
 
     # ==========================================
@@ -73,8 +73,13 @@ def train():
         BASE_MODEL,
         quantization_config=bnb_config,
         device_map="auto",
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True
     )
+    
+    # 解決基底模型 config 中 output_router_logits 被設為 True 導致 SFTTrainer 報錯的 Bug
+    if hasattr(model.config, "output_router_logits"):
+        model.config.output_router_logits = False
     
     # ==========================================
     # 4. LoRA 結構設定
@@ -91,9 +96,6 @@ def train():
         bias="none",
         task_type=TaskType.CAUSAL_LM
     )
-    
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
 
     # ==========================================
     # 5. 載入與預處理 JSONL 資料集
@@ -113,20 +115,23 @@ def train():
     print(f"📊 資料集預處理完成，共有 {len(dataset)} 筆訓練樣本。")
 
     # ==========================================
-    # 6. 訓練超參數設定
+    # 6. 訓練與 SFT 參數設定
     # ==========================================
-    print("⚙️ 設定訓練參數...")
-    training_args = TrainingArguments(
+    print("⚙️ 設定訓練與 SFT 參數...")
+    sft_config = SFTConfig(
         output_dir=output_dir,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
         logging_steps=10,
         num_train_epochs=5,
-        fp16=True,
+        bf16=True,
         save_strategy="epoch",
         optim="paged_adamw_32bit",
-        report_to="none"
+        report_to="none",
+        # 以下為 SFT 專屬參數
+        dataset_text_field="text",
+        max_length=512,
     )
 
     # ==========================================
@@ -136,10 +141,8 @@ def train():
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset,
-        dataset_text_field="text",
-        max_seq_length=512,
-        tokenizer=tokenizer,
-        args=training_args,
+        processing_class=tokenizer,
+        args=sft_config,
         peft_config=peft_config
     )
 

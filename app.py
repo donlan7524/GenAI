@@ -285,7 +285,7 @@ try:
         with st.spinner("首次啟動，正在為您採集/生成中山社群輿情數據..."):
             scraper.run_scraper()
 except Exception as e:
-    st.error(f"⚠️ 資料庫初始化或數據 Seed 失敗：{str(e)}")
+    st.error(f"資料庫初始化或數據 Seed 失敗：{str(e)}")
     st.stop()
 
 # 取得資料庫極值界限 (用於側邊欄初始篩選邊界)
@@ -323,6 +323,28 @@ st.sidebar.markdown(
     "<p style='color:#64748B; font-size:12px; margin-top:0px;'>學術分析與情緒監測終端</p></div>", 
     unsafe_allow_html=True
 )
+
+# 本地 API 伺服器狀態
+import requests
+local_url = "http://127.0.0.1:8000/v1"
+is_local_online = False
+local_models = []
+
+try:
+    res = requests.get(f"{local_url}/models", timeout=1.5)
+    if res.status_code == 200:
+        is_local_online = True
+        local_models = [m["id"] for m in res.json().get("data", [])]
+except Exception:
+    pass
+    
+if is_local_online:
+    st.sidebar.success(f"🟢 **本地 API 已連線**")
+    st.sidebar.caption(f"**本機伺服器**: `{local_url}`")
+    st.sidebar.caption(f"**偵測到適配器**: `{', '.join(local_models)}`")
+else:
+    st.sidebar.error("🔴 **本地 API 未啟動 (Port 8000)**")
+    st.sidebar.caption("已自動降級為本地規則/詞庫引擎 Fallback")
 
 st.sidebar.markdown("---")
 
@@ -364,7 +386,7 @@ with st.sidebar.expander("⚙️ Dcard 爬蟲連線設定"):
         "瀏覽器 User-Agent", 
         value=config.get("user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/120.0.0.0")
     )
-    if st.button("💾 儲存設定"):
+    if st.button("儲存設定"):
         new_config = {"dcard_cookie": cookie_input, "user_agent": ua_input}
         if scraper.save_config(new_config):
             st.success("爬蟲連線設定已更新！")
@@ -439,7 +461,7 @@ async function runSync(){
 runSync();
 })();"""
     st.markdown(
-        "<b>📌 書籤 A：大量貼文採集（免滾動，目標 100+ 篇）</b>",
+        "<b>書籤 A：大量貼文採集（免滾動，目標 100+ 篇）</b>",
         unsafe_allow_html=True
     )
     st.markdown(
@@ -514,15 +536,15 @@ async function runSync(){
 runSync();
 })();"""
     st.markdown(
-        "<b>📌 書籤 B：單篇貼文留言採集 (API 版)</b>",
+        "<b>書籤 B：單篇貼文留言採集 (API 版)</b>",
         unsafe_allow_html=True
     )
     st.markdown(
         "<div style='font-size:12px;color:#64748B;line-height:1.5;'>"
         "1. 複製下方代碼，建立書籤（命名為『Dcard 留言採集』）。<br>"
-        "2. 在儀表板貼文列表中點擊任一真實貼文連結 🔗。<br>"
+        "2. 在儀表板貼文列表中點擊任一真實貼文連結。<br>"
         "3. 開啟文章頁面後直接點擊書籤，數秒內即可自動透過 API 採集留言。<br>"
-        "4. 看到成功訊息後，切回儀表板底部查看「💬 留言分析」區塊。"
+        "4. 看到成功訊息後，切回儀表板底部查看「留言分析」區塊。"
         "</div>",
         unsafe_allow_html=True
     )
@@ -590,7 +612,7 @@ st.sidebar.markdown(
 try:
     filtered_posts, filtered_daily = db_manager.load_data_from_db(start_date, max_date, selected_categories)
 except Exception as e:
-    st.error(f"⚠️ 從資料庫載入篩選數據時發生錯誤：{str(e)}")
+    st.error(f"從資料庫載入篩選數據時發生錯誤：{str(e)}")
     filtered_posts = pd.DataFrame(columns=[
         "post_id", "title", "content", "category", "created_at",
         "valence_score", "arousal_score", "like_count", "comment_count", "keywords"
@@ -604,7 +626,7 @@ except Exception as e:
 # 主標題
 st.markdown(
     "<div style='margin-bottom: 24px;'>"
-    "<h1 style='color:#0F2C59; font-weight:700; font-size:32px; margin-bottom: 8px;'>🏫 中山大學社群輿情與情緒起伏儀表板</h1>"
+    "<h1 style='color:#0F2C59; font-weight:700; font-size:32px; margin-bottom: 8px;'>中山大學社群輿情與情緒起伏儀表板</h1>"
     "<p style='color:#64748B; font-size:16px; margin-top:0px;'>追蹤西灣學子在 Dcard 校版等社群的情緒脈動、高頻詞彙與討論焦點</p>"
     "</div>",
     unsafe_allow_html=True
@@ -623,7 +645,7 @@ if not anomaly_days.empty:
         st.markdown(
             f"""
             <div style="background-color: #FEF2F2; border-left: 4px solid #EF4444; padding: 12px 16px; border-radius: 4px; margin-bottom: 24px;">
-                <span style="color: #991B1B; font-weight: 700; font-size: 14px;">⚠️ 社群情緒異常警報 ({event_date})</span><br>
+                <span style="color: #991B1B; font-weight: 700; font-size: 14px;">社群情緒異常警報 ({event_date})</span><br>
                 <span style="color: #7F1D1D; font-size: 13px;">當日平均<b>效價偏低 ({row["avg_valence"]:+.1f}) 且喚起度飆高 ({row["avg_arousal"]:+.1f})</b>，情緒狀態高度緊繃。輿情觀測顯示可能原因為：<b>期中考試壓力</b> 與 <b>宿舍停水/選課系統負載過重</b> 重疊發生。</span>
             </div>
             """,
@@ -652,36 +674,36 @@ try:
         
         # 綜合判定今日校園氛圍
         if val >= 0 and aro >= 0:
-            mood_status = "激動正向 🚀"
+            mood_status = "激動正向"
             mood_color = "#10B981" # 綠色
             mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (積極興奮)"
         elif val < 0 and aro >= 0:
-            mood_status = "激動負向 🌋"
+            mood_status = "激動負向"
             mood_color = "#EF4444" # 紅色
             mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (焦慮憤怒)"
         elif val < 0 and aro < 0:
-            mood_status = "平靜負向 ❄️"
+            mood_status = "平靜負向"
             mood_color = "#64748B" # 灰色
             mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (沮喪無奈)"
         else:
-            mood_status = "平靜正向 🌊"
+            mood_status = "平靜正向"
             mood_color = "#3B82F6" # 藍色
             mood_desc = f"效價 {val:+.1f} / 喚起 {aro:+.1f} (放鬆愜意)"
     else:
-        mood_status = "無數據 📭"
+        mood_status = "無數據"
         mood_color = "#94A3B8"
         mood_desc = "暫無本日資料"
-
-    # 使用 st.columns 排版並渲染自訂 HTML 卡片
+ 
+     # 使用 st.columns 排版並渲染自訂 HTML 卡片
     m_col1, m_col2, m_col3 = st.columns(3)
     
     with m_col1:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">📊 分析總貼文數</div>
+            <div class="metric-title">分析總貼文數</div>
             <div class="metric-value">{total_posts:,} 篇</div>
             <div class="metric-sub">
-                <span>📅 篩選區間：{start_date} 至 {max_date}</span>
+                <span>篩選區間：{start_date} 至 {max_date}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -689,10 +711,10 @@ try:
     with m_col2:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">🔤 提取總詞彙量</div>
+            <div class="metric-title">提取總詞彙量</div>
             <div class="metric-value">{total_vocab:,} 個</div>
             <div class="metric-sub">
-                <span>🏷️ 包含中山社群高頻特徵詞</span>
+                <span>包含中山社群高頻特徵詞</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -700,15 +722,15 @@ try:
     with m_col3:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-title">💭 今日校園整體情緒</div>
+            <div class="metric-title">今日校園整體情緒</div>
             <div class="metric-value" style="color: {mood_color};">{mood_status}</div>
             <div class="metric-sub">
-                <span>📈 {mood_desc}</span>
+                <span>{mood_desc}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-    # ── 情緒分佈百分比計算與渲染 ──
+ 
+     # ── 情緒分佈百分比計算與渲染 ──
     if total_posts > 0:
         pos_p = (filtered_posts["valence_score"] >= 0).sum()
         neg_p = total_posts - pos_p
@@ -723,13 +745,13 @@ try:
         st.markdown(f"""
         <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px; margin-top: 10px;">
             <div style="color: #0F2C59; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-                📊 貼文整體情緒分佈比例 (Valence-Arousal Distribution)
+                貼文整體情緒分佈比例 (Valence-Arousal Distribution)
             </div>
             <div style="display: flex; gap: 30px; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 280px;">
                     <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; margin-bottom: 6px;">
-                        <span style="color: #EF4444;">🔴 負向偏向 (Valence &lt; 0): {neg_pct:.1f}%</span>
-                        <span style="color: #10B981;">🟢 正向偏向 (Valence &ge; 0): {pos_pct:.1f}%</span>
+                        <span style="color: #EF4444;">負向偏向 (Valence &lt; 0): {neg_pct:.1f}%</span>
+                        <span style="color: #10B981;">正向偏向 (Valence &ge; 0): {pos_pct:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; background-color: #E2E8F0;">
                         <div style="width: {neg_pct}%; background-color: #EF4444;"></div>
@@ -738,8 +760,8 @@ try:
                 </div>
                 <div style="flex: 1; min-width: 280px;">
                     <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; margin-bottom: 6px;">
-                        <span style="color: #3B82F6;">🔵 冷靜平靜 (Arousal &lt; 0): {cal_pct:.1f}%</span>
-                        <span style="color: #F59E0B;">🟠 激動興奮 (Arousal &ge; 0): {exc_pct:.1f}%</span>
+                        <span style="color: #3B82F6;">冷靜平靜 (Arousal &lt; 0): {cal_pct:.1f}%</span>
+                        <span style="color: #F59E0B;">激動興奮 (Arousal &ge; 0): {exc_pct:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; background-color: #E2E8F0;">
                         <div style="width: {cal_pct}%; background-color: #3B82F6;"></div>
@@ -749,11 +771,11 @@ try:
             </div>
         </div>
         """, unsafe_allow_html=True)
-
+ 
 except Exception as e:
     st.error(f"渲染 Metrics 區塊時發生錯誤: {str(e)}")
-
-
+ 
+ 
 st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
 
@@ -846,7 +868,7 @@ with chart_col1:
 with chart_col2:
     st.markdown(
         "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-        "<h3 style='color:#0F2C59; font-size:16px; font-weight:600; margin-top:0px; margin-bottom:15px;'>🏷️ 高頻詞彙 Top 10 排行</h3>", 
+        "<h3 style='color:#0F2C59; font-size:16px; font-weight:600; margin-top:0px; margin-bottom:15px;'>高頻詞彙 Top 10 排行</h3>", 
         unsafe_allow_html=True
     )
     
@@ -913,7 +935,7 @@ with chart_col2:
 st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 st.markdown(
     "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-    "<h3 style='color:#0F2C59; font-size:16px; font-weight:600; margin-top:0px; margin-bottom:5px;'>🎯 2D 社群輿情象限平面圖 (Valence-Arousal)</h3>"
+    "<h3 style='color:#0F2C59; font-size:16px; font-weight:600; margin-top:0px; margin-bottom:5px;'>2D 社群輿情象限平面圖 (Valence-Arousal)</h3>"
     "<p style='color:#64748B; font-size:13px; margin-top:0px; margin-bottom:15px;'>將貼文定位在「好惡效價」與「喚起激動度」平面上，展示當前社群情緒聚類</p>", 
     unsafe_allow_html=True
 )
@@ -925,10 +947,10 @@ try:
         
         def get_quadrant(row):
             v, a = row["valence_score"], row["arousal_score"]
-            if v >= 0 and a >= 0: return "第一象限：積極興奮 🚀"
-            elif v < 0 and a >= 0: return "第二象限：焦慮憤怒 🌋"
-            elif v < 0 and a < 0: return "第三象限：沮喪消極 ❄️"
-            else: return "第四象限：平靜放鬆 🌊"
+            if v >= 0 and a >= 0: return "第一象限：積極興奮"
+            elif v < 0 and a >= 0: return "第二象限：焦慮憤怒"
+            elif v < 0 and a < 0: return "第三象限：沮喪消極"
+            else: return "第四象限：平靜放鬆"
             
         df_va["象限"] = df_va.apply(get_quadrant, axis=1)
         
@@ -942,8 +964,8 @@ try:
             hover_name="title",
             custom_data=df_va[["like_count", "comment_count", "象限", "short_title"]],
             labels={
-                "valence_score": "情緒效價 (Valence - 負向極端至正向極端)",
-                "arousal_score": "情緒喚起 (Arousal - 平靜冷靜至高亢激動)",
+                "valence_score": "情緒效價 (負向極端至正向極端)",
+                "arousal_score": "情緒喚起 (平靜冷靜至高亢激動)",
                 "category": "討論主題"
             }
         )
@@ -964,10 +986,10 @@ try:
         fig_va.add_shape(type="line", x0=0, y0=-105, x1=0, y1=105, line=dict(color="#E2E8F0", width=1.5, dash="dash"))
         
         # 🟢 優化 2：將四個象限的文字推到座標軸的最外圍邊界，並調小、套用半透明度，避免遮擋散點
-        fig_va.add_annotation(x=95, y=98, text="<b>第一象限：積極興奮 🚀</b>", showarrow=False, font=dict(color="rgba(16, 185, 129, 0.45)", size=10), xanchor="right", yanchor="top")
-        fig_va.add_annotation(x=-95, y=98, text="<b>第二象限：焦慮憤怒 🌋</b>", showarrow=False, font=dict(color="rgba(239, 68, 68, 0.45)", size=10), xanchor="left", yanchor="top")
-        fig_va.add_annotation(x=-95, y=-98, text="<b>第三象限：沮喪消極 ❄️</b>", showarrow=False, font=dict(color="rgba(100, 116, 139, 0.45)", size=10), xanchor="left", yanchor="bottom")
-        fig_va.add_annotation(x=95, y=-98, text="<b>第四象限：平靜放鬆 🌊</b>", showarrow=False, font=dict(color="rgba(59, 130, 246, 0.45)", size=10), xanchor="right", yanchor="bottom")
+        fig_va.add_annotation(x=95, y=98, text="<b>第一象限：積極興奮</b>", showarrow=False, font=dict(color="rgba(16, 185, 129, 0.45)", size=10), xanchor="right", yanchor="top")
+        fig_va.add_annotation(x=-95, y=98, text="<b>第二象限：焦慮憤怒</b>", showarrow=False, font=dict(color="rgba(239, 68, 68, 0.45)", size=10), xanchor="left", yanchor="top")
+        fig_va.add_annotation(x=-95, y=-98, text="<b>第三象限：沮喪消極</b>", showarrow=False, font=dict(color="rgba(100, 116, 139, 0.45)", size=10), xanchor="left", yanchor="bottom")
+        fig_va.add_annotation(x=95, y=-98, text="<b>第四象限：平靜放鬆</b>", showarrow=False, font=dict(color="rgba(59, 130, 246, 0.45)", size=10), xanchor="right", yanchor="bottom")
         
         fig_va.update_layout(
             paper_bgcolor='rgba(0,0,0,0)',
@@ -1013,7 +1035,7 @@ st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 # ==============================================================================
 st.markdown(
     "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:20px;'>🧩 熱門討論主題分佈</h3>", 
+    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:20px;'>熱門討論主題分佈</h3>", 
     unsafe_allow_html=True
 )
 
@@ -1101,7 +1123,7 @@ with topic_col2:
     csv_data = export_df.to_csv(index=False).encode('utf-8-sig') # 帶 BOM 的 UTF-8 避免 Excel 開啟亂碼
     
     st.download_button(
-        label="📥 匯出當前篩選數據 (CSV)",
+        label="匯出當前篩選數據 (CSV)",
         data=csv_data,
         file_name=f"nsysu_sentiment_data_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv"
@@ -1117,7 +1139,7 @@ st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
 st.markdown(
     "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:5px;'>☁️ 社群熱門關鍵字文字雲</h3>"
+    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:5px;'>社群熱門關鍵字文字雲</h3>"
     "<p style='color:#64748B; font-size:13px; margin-top:0px; margin-bottom:20px;'>互動式文字雲（字型大小代表詞頻，滑鼠移過去可看詳細次數）</p>", 
     unsafe_allow_html=True
 )
@@ -1199,7 +1221,7 @@ try:
         
         st.plotly_chart(fig_wc, use_container_width=True)
     else:
-        st.info("💡 當前篩選條件下無足夠數據生成文字雲。")
+        st.info("當前篩選條件下無足夠數據生成文字雲。")
 except Exception as e:
     st.error(f"文字雲渲染失敗: {str(e)}")
 
@@ -1214,7 +1236,7 @@ st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 # ==============================================================================
 st.markdown(
     "<div style='background-color:#FFFFFF; border: 1px solid #E2E8F0; border-radius:12px; padding:24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:5px;'>🔍 社群貼文檢索與情緒下鑽細查</h3>"
+    "<h3 style='color:#0F2C59; font-size:18px; font-weight:600; margin-top:0px; margin-bottom:5px;'>社群貼文檢索與情緒下鑽細查</h3>"
     "<p style='color:#64748B; font-size:13px; margin-top:0px; margin-bottom:20px;'>輸入關鍵字或點擊篩選，直接調閱 Dcard 模擬貼文之細部情緒指標與指標權重</p>", 
     unsafe_allow_html=True
 )
@@ -1328,7 +1350,7 @@ if not search_posts.empty:
             unsafe_allow_html=True
         )
 else:
-    st.info("💡 找不到符合條件的貼文，請嘗試更換關鍵字或擴大左側篩選條件。")
+    st.info("找不到符合條件的貼文，請嘗試更換關鍵字或擴大左側篩選條件。")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1338,7 +1360,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("---")
 st.markdown(
     "<h2 style='color:#0F2C59; font-size:22px; font-weight:700; margin-bottom:4px;'>"
-    "💬 留言情緒深度分析"
+    "留言情緒深度分析"
     "</h2>"
     "<p style='color:#64748B; font-size:14px; margin-bottom:20px;'>"
     "透過書籤 B 採集個別貼文的留言後，此處呈現留言情緒分佈與貼文 vs 留言的情緒落差分析。"
@@ -1348,7 +1370,7 @@ st.markdown(
 
 if not db_manager.has_comments():
     st.info(
-        "📋 尚未採集任何留言數據。請使用側邊欄「⚡ Dcard 書籤工具」中的 **書籤 B** "
+        "尚未採集任何留言數據。請使用側邊欄「Dcard 書籤工具」中的 **書籤 B** "
         "前往任一 Dcard 貼文頁面採集留言，完成後此區塊將自動顯示分析結果。"
     )
 else:
@@ -1364,13 +1386,13 @@ else:
         
         # 判定主要情緒象限
         if avg_val_all >= 0 and avg_aro_all >= 0:
-            dominant = "積極興奮 🚀"
+            dominant = "積極興奮"
         elif avg_val_all < 0 and avg_aro_all >= 0:
-            dominant = "焦慮憤怒 🌋"
+            dominant = "焦慮憤怒"
         elif avg_val_all < 0 and avg_aro_all < 0:
-            dominant = "沮喪無奈 ❄️"
+            dominant = "沮喪無奈"
         else:
-            dominant = "放鬆平靜 🌊"
+            dominant = "放鬆平靜"
 
         mc1, mc2, mc3, mc4 = st.columns(4)
         mc1.metric("已採集留言數", f"{total_comments} 則")
@@ -1392,13 +1414,13 @@ else:
         st.markdown(f"""
         <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-top: 10px; margin-bottom: 20px;">
             <div style="color: #0F2C59; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
-                💬 留言整體情緒分佈比例 (Valence-Arousal Distribution)
+                留言整體情緒分佈比例 (Valence-Arousal Distribution)
             </div>
             <div style="display: flex; gap: 30px; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 280px;">
                     <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 6px;">
-                        <span style="color: #EF4444;">🔴 負向偏向 (Valence &lt; 0): {c_neg_pct:.1f}%</span>
-                        <span style="color: #10B981;">🟢 正向偏向 (Valence &ge; 0): {c_pos_pct:.1f}%</span>
+                        <span style="color: #EF4444;">負向偏向 (Valence &lt; 0): {c_neg_pct:.1f}%</span>
+                        <span style="color: #10B981;">正向偏向 (Valence &ge; 0): {c_pos_pct:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background-color: #E2E8F0;">
                         <div style="width: {c_neg_pct}%; background-color: #EF4444;"></div>
@@ -1407,8 +1429,8 @@ else:
                 </div>
                 <div style="flex: 1; min-width: 280px;">
                     <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 6px;">
-                        <span style="color: #3B82F6;">🔵 冷靜平靜 (Arousal &lt; 0): {c_cal_pct:.1f}%</span>
-                        <span style="color: #F59E0B;">🟠 激動興奮 (Arousal &ge; 0): {c_exc_pct:.1f}%</span>
+                        <span style="color: #3B82F6;">冷靜平靜 (Arousal &lt; 0): {c_cal_pct:.1f}%</span>
+                        <span style="color: #F59E0B;">激動興奮 (Arousal &ge; 0): {c_exc_pct:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background-color: #E2E8F0;">
                         <div style="width: {c_cal_pct}%; background-color: #3B82F6;"></div>
@@ -1531,24 +1553,24 @@ else:
             # 效價 (Valence) 轉百分比
             if val >= 0:
                 val_pct = 50.0 + (val / 2.0)
-                val_text_show = f"🟢 正向 {val_pct:.1f}%"
+                val_text_show = f"正向 {val_pct:.1f}%"
                 val_bg = "#ECFDF5"
                 val_txt = "#047857"
             else:
                 val_pct = 50.0 - (val / 2.0)
-                val_text_show = f"🔴 負向 {val_pct:.1f}%"
+                val_text_show = f"負向 {val_pct:.1f}%"
                 val_bg = "#FEF2F2"
                 val_txt = "#B91C1C"
                 
             # 喚起度 (Arousal) 轉百分比
             if aro >= 0:
                 aro_pct = 50.0 + (aro / 2.0)
-                aro_text_show = f"🟠 激動 {aro_pct:.1f}%"
+                aro_text_show = f"激動 {aro_pct:.1f}%"
                 aro_bg = "#FFFBEB"
                 aro_txt = "#B45309"
             else:
                 aro_pct = 50.0 - (aro / 2.0)
-                aro_text_show = f"🔵 冷靜 {aro_pct:.1f}%"
+                aro_text_show = f"冷靜 {aro_pct:.1f}%"
                 aro_bg = "#EFF6FF"
                 aro_txt = "#1E40AF"
             

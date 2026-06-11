@@ -44,3 +44,8 @@ test.json
 filtered_trees.json
 scraped_data.txt
 *dataset.jsonl
+
+# === 模型與大檔 ===
+*.zip
+nsysu_commenter_lora/
+nsysu_poster_lora/

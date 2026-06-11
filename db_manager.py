@@ -114,6 +114,10 @@ def save_posts_to_db(df_posts, db_path=DB_FILE):
                 VALUES (?, ?, ?)
                 """, (row["post_id"], word, 1.0))
                 
+        # 3. 自動進行情緒傳播自學習，將本篇計算分數留給下一篇
+        import nlp_engine
+        nlp_engine.propagate_sentiment_to_keywords(row["title"], row["content"], row["valence_score"], row["arousal_score"], cursor=cursor)
+                
     conn.commit()
     
     # 3. 重新計算並更新 daily_summary 資料表 (Valence-Arousal 版)

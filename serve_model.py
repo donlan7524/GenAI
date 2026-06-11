@@ -49,7 +49,7 @@ if device == "cuda":
 else:
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        device_map="auto",
+        torch_dtype=torch.bfloat16,
         trust_remote_code=True
     )
 
@@ -117,7 +117,7 @@ class ChatCompletionResponse(BaseModel):
 # 3. 實作 OpenAI Chat/Completions 接口
 # ==========================================
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-async def chat_completions(request: ChatCompletionRequest):
+def chat_completions(request: ChatCompletionRequest):
     try:
         # 動態路由決定使用哪一個 LoRA Adapter
         target_model_name = request.model.lower()
