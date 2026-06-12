@@ -493,8 +493,11 @@ class VirtualBoard:
         cursor.execute("SELECT floor, author_name, content FROM virtual_comments WHERE post_id = ? ORDER BY floor ASC", (post_id,))
         comments_history = [{"floor": r[0], "author": r[1], "content": r[2]} for r in cursor.fetchall()]
         
-        next_floor = len(comments_history) + 1
         content = commenter_agent.generate_comment(post_title, post_content, comments_history, reply_to_floor, status_callback=status_callback)
+        
+        # 在寫入前重新計算最新樓層，防止 AI 推理生成時間過長導致樓層衝突 (Race Condition)
+        cursor.execute("SELECT COUNT(*) FROM virtual_comments WHERE post_id = ?", (post_id,))
+        next_floor = cursor.fetchone()[0] + 1
         
         comment_id = f"VC_{post_id}_{next_floor}"
         author_name = commenter_agent.persona.get_display_name()
