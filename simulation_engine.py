@@ -142,7 +142,7 @@ class Persona:
         self.gender = gender if gender else random.choice(["M", "F"])
         
     def get_display_name(self):
-        return f"國立中山大學 {self.department}"
+        return "中山大學"
 
     def to_dict(self):
         return {
