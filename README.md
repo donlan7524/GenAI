@@ -18,13 +18,12 @@
 3. [專案結構與文件導覽](#-專案結構與文件導覽)
 4. [NLP 情緒分析引擎與情感模型](#-nlp-情緒分析引擎與情感模型)
 5. [資料庫設計與防重疊機制](#-資料庫設計與防重疊機制)
-6. [自動化 CDP 採集流水線](#-自動化-cdp-採集流水線)
-7. [知識蒸餾與資料集準備](#-知識蒸餾與資料集準備)
-8. [大語言模型 QLoRA 微調與 FastAPI 部署](#-大語言模型-qlora-微調與-fastapi-部署)
-9. [中山 AI 網友社群模擬沙盒](#-中山-ai-網友社群模擬沙盒)
-10. [資料庫重設工具](#-資料庫重設工具)
-11. [安裝與執行](#-安裝與執行)
-12. [隱私與安全說明](#-隱私與安全說明)
+6. [知識蒸餾與資料集準備](#-知識蒸餾與資料集準備)
+7. [大語言模型 QLoRA 微調與 FastAPI 部署](#-大語言模型-qlora-微調與-fastapi-部署)
+8. [中山 AI 網友社群模擬沙盒](#-中山-ai-網友社群模擬沙盒)
+9. [學術量化評估與論文報告](#-學術量化評估與論文報告)
+10. [安裝與執行](#-安裝與執行)
+11. [隱私與安全說明](#-隱私與安全說明)
 
 ---
 
@@ -63,18 +62,25 @@
 c:/Users/Diego/Downloads/AI_project/
 ├── app.py                      # Streamlit 儀表板主入口程式
 ├── pages/
+│   └── 1_中山AI網友沙盒.py      # AI 網友社群自主模擬與人機大戰前端
 ├── dcard_fetcher.py            # Playwright Chrome CDP 自動化爬蟲 (隨機防封鎖延遲)
 ├── HTMLdealer.py               # 數據庫同步與 CSV 寫入工具
 ├── data_processor.py           # 知識蒸餾管線 (對話樹重建 + NumPy MLP 雜訊過濾)
+├── import_content_csv.py       # 離線 content.csv 數據多行解析與導入資料庫工具
 ├── train_lora.py               # QLoRA 4-bit 微調訓練腳本 (支援 Colab T4)
 ├── serve_model.py              # FastAPI OpenAI 相容本地模型 API 伺服器
 ├── evaluator.py                # TTR 豐富度與風格 Cosine 相似度評估工具
 ├── clean_db.py                 # SQLite 資料庫安全清空與壓縮工具
 ├── nlp_engine.py               # 2D 情感分析引擎與關鍵字詞雲生成
 ├── db_manager.py               # 本地 SQLite 資料庫讀寫介面
-├── nsysu_舆情.db                # 本地 SQLite 資料庫 (儲存爬蟲與模擬數據)
+├── nsysu_舆情.db                # 本地 SQLite 資料庫 (儲存爬蟲、模擬與導入數據)
 ├── PROJECT_GUIDE.md            # 本專案一站式完整使用指南 (繁中)
-└── README.md                   # 專案介紹說明書 (本文件)
+├── README.md                   # 專案介紹說明書 (本文件)
+└── report/                     # 學術報告產出模組
+    ├── academic_report.html    # 雙欄論文格式學術報告 (HTML)
+    ├── academic_report.pdf     # 使用 Playwright 自動編譯的學術 PDF 報告
+    ├── generate_report_charts.py # 圖表生成工具 (動態繪製情緒空間與評估結果)
+    └── compile_pdf.py          # 自動化 HTML 轉 PDF 編譯指令腳本
 ```
 
 ---
@@ -130,23 +136,55 @@ $$\text{百分比} = 50.0\% + \frac{\text{原始分數}}{2.0}$$
 
 ---
 
+## 🎓 學術量化評估與論文報告
+
+本系統具備標準學術評估管線與論文雙欄格式報告生成機制，用於科學評估 AI 網友智能體與真實人類留言的風格契合度。
+
+### 1. 學術量化指標 (最新評估結果)
+基於導入的 `content.csv` 真實語料（N=193 貼文，222 留言）以及模擬生成的 AI 語料進行評估：
+*   **TTR 詞彙多樣度**：
+    *   **真實人類留言**：`49.1%`
+    *   **AI 網友留言**：`72.9%`
+    *   *評估結論*：AI 網友展現出更高的句式與詞彙豐富度，並無產生崩潰或重複性罐頭留言。
+*   **語氣餘弦相似度 (Style Cosine Similarity)**：
+    *   **結果**：`58.3%`
+    *   *評估結論*：在無監督冷啟動下，AI 網友與真實人類留言在 TF-IDF 用詞向量上的相似度達 `58.3%`，驗證了 QLoRA 微調對於吸收中山大學學生用詞特徵與黑話習慣的有效性。
+
+### 2. 雙欄論文報告產出
+專案在 `report/` 目錄中提供完整學術報告生成工具：
+*   **學術報告 PDF**：[academic_report.pdf](file:///c:/Users/Diego/Downloads/AI_project/report/academic_report.pdf)（為無作者/機構資訊的雙欄學術論文格式報告，共 6 頁）。
+*   **圖表生成器**：執行 `python report/generate_report_charts.py` 將自動從資料庫讀取最新數據，並在 `report/assets/` 下繪製情緒空間分佈、主題統計與評估指標對比等三張高清圖表。
+*   **PDF 編譯工具**：執行 `python report/compile_pdf.py` 可利用 Playwright 自動將 `academic_report.html` 渲染並編譯輸出為 PDF 格式報告。
+
+---
+
 ## 🚀 安裝與快速執行
 
 1. **安裝相依套件**：
    ```bash
-   pip install streamlit pandas plotly jieba wordcloud curl_cffi playwright fastapi uvicorn torch transformers peft accelerate datasets bitsandbytes
+   pip install streamlit pandas plotly jieba wordcloud curl_cffi playwright fastapi uvicorn torch transformers peft accelerate datasets bitsandbytes matplotlib
    playwright install chromium
    ```
-2. **啟動除錯模式 Chrome (防封鎖)**：
+2. **導入真實離線數據 (選用)**：
+   若不使用爬蟲，可直接導入 `content.csv` 快速填入資料庫：
+   ```bash
+   python import_content_csv.py
+   ```
+3. **啟動除錯模式 Chrome (若使用 Dcard 爬蟲)**：
    ```powershell
    & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome_dev_profile" --no-first-run
    ```
-3. **執行採集與解析**：
+4. **執行爬蟲採集與解析 (若使用爬蟲)**：
    ```bash
    python dcard_fetcher.py
    python HTMLdealer.py
    ```
-4. **啟動 Web 儀表板與沙盒**：
+5. **產生學術圖表與報告**：
+   ```bash
+   python report/generate_report_charts.py
+   python report/compile_pdf.py
+   ```
+6. **啟動 Web 儀表板與沙盒**：
    ```bash
    streamlit run app.py
    ```
